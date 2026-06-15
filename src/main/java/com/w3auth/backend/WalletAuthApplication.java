@@ -1,13 +1,12 @@
-package com.w3.w3auth;
+package com.w3auth.backend;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class W3AuthApplication {
+public class WalletAuthApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(W3AuthApplication.class, args);
+        SpringApplication.run(WalletAuthApplication.class, args);
     }
-
 }
