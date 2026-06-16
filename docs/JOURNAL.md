@@ -68,7 +68,7 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
-## M0 · step 6 — POST /v1/auth/challenge endpoint   (commit <next>)
+## M0 · step 6 — POST /v1/auth/challenge endpoint   (commit 50288c3)
 
 **What:** Added the `api` package: `ChallengeRequest` (`@NotBlank accountId`), `ChallengeResponse` (nonce + SIWE message + expiresAt), `ChallengeController` (`POST /v1/auth/challenge` → 201), and `GlobalExceptionHandler` (`IllegalArgumentException` → 400 JSON). The controller parses the CAIP-10 string via `CaipAccountId.parse()`, delegates to `RequestChallenge`, then formats the SIWE message via `SiweMessageFactory.create()`. `ChallengeControllerTest` uses `MockMvcBuilders.standaloneSetup()` with a real `LocalValidatorFactoryBean` and covers: valid request → 201 body, blank accountId → 400, missing accountId → 400, malformed CAIP-10 → 400 with `{"error":...}`.
 
