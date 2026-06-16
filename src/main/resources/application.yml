@@ -17,6 +17,12 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
 
+walletauth:
+  challenge:
+    domain: ${WALLETAUTH_DOMAIN:localhost}
+    uri: ${WALLETAUTH_URI:http://localhost:8080}
+    nonce-ttl: ${WALLETAUTH_NONCE_TTL:5m}
+
 management:
   endpoints:
     web:
