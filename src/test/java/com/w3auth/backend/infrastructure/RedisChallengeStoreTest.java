@@ -63,6 +63,8 @@ class RedisChallengeStoreTest {
         assertThat(consumed).contains(challenge);
     }
 
+    // TODO: concurrency test — N threads consume same nonce, assert exactly one success (regression guard for atomicity)
+
     @Test
     void consumeIsSingleUse() {
         Challenge challenge = sampleChallenge(Nonce.generate());
