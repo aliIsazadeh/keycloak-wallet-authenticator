@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: wallet-auth
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/walletauth}
+    username: ${POSTGRES_USER:walletauth}
+    password: ${POSTGRES_PASSWORD:walletauth}
+  jpa:
+    hibernate:
+      # No business entities exist yet; Flyway owns the schema, not Hibernate.
+      ddl-auto: none
+    open-in-view: false
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+walletauth:
+  challenge:
+    domain: ${WALLETAUTH_DOMAIN:localhost}
+    uri: ${WALLETAUTH_URI:http://localhost:8080}
+    nonce-ttl: ${WALLETAUTH_NONCE_TTL:5m}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
