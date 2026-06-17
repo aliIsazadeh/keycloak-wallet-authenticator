@@ -1,0 +1,4 @@
+-- M0 baseline: no durable schema yet. Redis owns all M0 state (challenge:{nonce}).
+-- Flyway needs at least one migration to run intentionally rather than silently
+-- finding an empty/missing migration path. wallet_identity arrives in M1,
+-- refresh_token in M2, auth_event later.
