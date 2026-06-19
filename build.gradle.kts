@@ -32,6 +32,9 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
 
+    // Ethereum crypto (ecrecover, Keccak-256, secp256k1) — crypto module only, not web3j:core
+    implementation("org.web3j:crypto:4.12.3")
+
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-starter-security-test")

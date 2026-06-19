@@ -67,7 +67,7 @@ public class VerifyAndAuthenticate {
         validateFields(parsed, challenge);
 
         // Step 4: signature verification (ecrecover in production; injected for tests)
-        VerifiedIdentity verified = signatureVerifier.verify(new VerificationRequest(parsed, signature));
+        VerifiedIdentity verified = signatureVerifier.verify(new VerificationRequest(parsed, rawMessage, signature));
 
         // Step 5: signer must equal the address the message claims
         // Case-insensitive: ecrecover may return mixed-case; full canonicalization is in M1 step 3 (ecrecover)
