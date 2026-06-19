@@ -68,6 +68,39 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
+## M1 · step 4 — Identity upsert (first durable Postgres write)   (commit <hash>)
+
+**What:** Added the wallet identity layer. Seven files changed or created.
+
+*Core (no Spring/JPA):*
+- `WalletIdentity` — immutable record: `(id, identityKey, status, createdAt, lastLoginAt)`. Compact constructor rejects nulls and blank status. No JPA annotations.
+- `WalletIdentityStore` — port interface in `identity`: `upsertOnLogin(CaipAccountId) → WalletIdentity`.
+
+*Infrastructure:*
+- `V2__wallet_identity.sql` — Flyway migration: `wallet_identity` table with `gen_random_uuid()` PK, `UNIQUE(namespace, address)` constraint (no `chain_id` column — the identity-key design made durable).
+- `WalletIdentityEntity` — JPA entity mapped to `wallet_identity`; no setters, no `@GeneratedValue` (Postgres generates the UUID, we only ever read the entity via Spring Data, never save it).
+- `WalletIdentityRepository` — Spring Data `JpaRepository` with one derived query (`findByNamespaceAndAddress`).
+- `JpaWalletIdentityStore` — implements `WalletIdentityStore`. Runs a native `INSERT ... ON CONFLICT (namespace, address) DO UPDATE SET last_login_at = :now`, then `flush()` + `clear()` to purge the L1 cache, then a `findByNamespaceAndAddress` to return the current row. Clock is injected; `OffsetDateTime.ofInstant(clock.instant(), UTC)` is used for the timestamp parameter to guarantee correct `TIMESTAMPTZ` binding through JDBC 42.x.
+
+*Wiring:*
+- `VerifyAndAuthenticate` received `WalletIdentityStore` as a new constructor parameter; step 6 now calls `identityStore.upsertOnLogin(account)` as a side-effect before returning the `CaipAccountId`. `UseCaseConfiguration` wires `JpaWalletIdentityStore` (auto-detected as `@Component`) into the use case bean.
+
+*Tests:* `VerifyAndAuthenticateTest` added `InMemoryWalletIdentityStore` stub (10 tests unchanged, happy path now also asserts `upsertOnLogin` was called once). `JpaWalletIdentityStoreTest` (3 tests against real Postgres via Testcontainers): new-account row, second-login updates `last_login_at` without touching `created_at`, and different `chainId` = same identity row. `WalletIdentityConcurrencyTest` (1 test): uses the real Spring-managed `JpaWalletIdentityStore` via `@Import` + `@Transactional(NOT_SUPPORTED)` so each of 8 virtual threads runs the full upsert → flush → clear → findByNamespaceAndAddress sequence in its own committed transaction; asserts no thread threw (the `orElseThrow` in the adapter is the failure mode) and exactly one row exists — exercises the adapter, not raw SQL.
+
+**Why the return type of `execute()` stays `CaipAccountId`:** Architecture §6 says JWT subject = the CAIP-10 string. M2 does not need the `WalletIdentity` UUID from `execute()`. Rule of three: no signature change until there is a real second caller that requires `WalletIdentity` from this method. The upsert is a side-effect from the use case's perspective.
+
+**Why `entityManager.flush()` + `entityManager.clear()` after the native upsert:** JPA's first-level (L1) cache is per-EntityManager (per-transaction). A native SQL `INSERT ... ON CONFLICT DO UPDATE` bypasses the L1 cache — Hibernate doesn't know the row was created or updated. Without `flush()`, the native statement might be held pending; without `clear()`, the subsequent `findByNamespaceAndAddress` can return a stale (empty) L1 entry. Both are required for correctness.
+
+**Why `OffsetDateTime` instead of `Instant` for the native query parameter:** Hibernate 6 maps `Instant` to `TIMESTAMP_WITH_TIMEZONE` via JPQL, but in native queries the binding goes through the JDBC driver's `setObject`. While PostgreSQL JDBC 42.x does support `Instant` here, `OffsetDateTime` is the explicit, unambiguous type — it maps to `TIMESTAMPTZ` in PostgreSQL without relying on implicit type inference. One extra conversion at call time buys a clear data-type contract.
+
+**Spring Boot 4.x discovery — `@DataJpaTest` moved packages:** The `@DataJpaTest` annotation is no longer in `spring-boot-test-autoconfigure`. Spring Boot 4.x extracted all data-tier test slices into per-module test jars. The new coordinates are `org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest` (in `spring-boot-data-jpa-test`) and `org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase` (in `spring-boot-jdbc-test`). The build required `testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")` to pull these in. The `@DataJpaTest` slice still runs Flyway when `replace = NONE` — that behavior is preserved.
+
+**Learned:** Database schema is the best place to enforce an architecture decision. The `UNIQUE(namespace, address)` constraint — without a `chain_id` column — makes the identity-key design physically impossible to violate, not just conventionally true in code. The `ON CONFLICT DO UPDATE` pattern is not just an optimisation; it is the atomicity guarantee that makes concurrent first-logins safe. Without it, a `SELECT` + conditional `INSERT` would have a race window between the two statements.
+
+**Open / next:** M1 step 5 — access JWT issuance. `VerifyAndAuthenticate` currently returns a `CaipAccountId`; it will grow to return a signed JWT (HS256, ~10 min expiry, subject = CAIP-10 string). Introduce `JwtService` in the `session` package and `POST /v1/auth/verify` in `api`.
+
+---
+
 ## M1 · step 3 — `EthereumSignatureVerifier` (EOA ecrecover)   (commit <hash>)
 
 **What:** Added `EthereumSignatureVerifier` in `verification`, implementing `SignatureVerifier`. It decodes the hex signature to 65 raw bytes (explicit per-character hex validation), normalises `v ∈ {0,1}` to `{27,28}`, constructs `Sign.SignatureData`, and calls web3j's `Sign.signedPrefixedMessageToKey` — which applies the EIP-191 prefix (`"\x19Ethereum Signed Message:\n{byteLen}"`) and Keccak-256 internally before recovering the public key via secp256k1 ecrecover. The recovered address (`Keys.getAddress(publicKey)`, lowercase, no 0x) is returned in `VerifiedIdentity`. `SignatureException` from web3j (invalid `v`, point not on curve) is wrapped as `VerificationException` — fail closed. `VerificationRequest` gained a `rawMessage` field (the exact wire bytes signed by the wallet). `EthereumSignatureVerifier` is wired as a bean in `UseCaseConfiguration` alongside the `VerifyAndAuthenticate` bean it powers. 7 tests in `EthereumSignatureVerifierTest`.

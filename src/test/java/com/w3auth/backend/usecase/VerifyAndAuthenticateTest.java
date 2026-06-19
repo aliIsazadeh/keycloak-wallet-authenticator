@@ -6,6 +6,8 @@ import com.w3auth.backend.challenge.ChallengeStore;
 import com.w3auth.backend.challenge.SiweMessageFactory;
 import com.w3auth.backend.identity.CaipAccountId;
 import com.w3auth.backend.identity.Namespace;
+import com.w3auth.backend.identity.WalletIdentity;
+import com.w3auth.backend.identity.WalletIdentityStore;
 import com.w3auth.backend.verification.SignatureVerifier;
 import com.w3auth.backend.verification.VerificationException;
 import com.w3auth.backend.verification.VerifiedIdentity;
@@ -15,9 +17,12 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -36,6 +41,7 @@ class VerifyAndAuthenticateTest {
             "example.com", "https://example.com/login", Duration.ofMinutes(5));
 
     private final InMemoryChallengeStore store = new InMemoryChallengeStore();
+    private final InMemoryWalletIdentityStore identityStore = new InMemoryWalletIdentityStore();
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -52,7 +58,7 @@ class VerifyAndAuthenticateTest {
     }
 
     private VerifyAndAuthenticate useCase(SignatureVerifier verifier) {
-        return new VerifyAndAuthenticate(store, POLICY, verifier, FIXED_CLOCK);
+        return new VerifyAndAuthenticate(store, POLICY, verifier, identityStore, FIXED_CLOCK);
     }
 
     /** Verifier stub that always returns the given address without inspecting the request. */
@@ -71,6 +77,8 @@ class VerifyAndAuthenticateTest {
                 .execute(SiweMessageFactory.create(c), "dummy-sig");
 
         assertThat(result).isEqualTo(CaipAccountId.of(Namespace.EIP155, CHAIN_ID, ADDRESS));
+        assertThat(identityStore.upserted)
+                .containsExactly(CaipAccountId.of(Namespace.EIP155, CHAIN_ID, ADDRESS));
     }
 
     // ── nonce failures ────────────────────────────────────────────────────────
@@ -203,7 +211,18 @@ class VerifyAndAuthenticateTest {
                 .hasMessageContaining("signer mismatch");
     }
 
-    // ── in-memory store (same pattern as RequestChallengeTest) ────────────────
+    // ── in-memory stubs ───────────────────────────────────────────────────────
+
+    static class InMemoryWalletIdentityStore implements WalletIdentityStore {
+        final List<CaipAccountId> upserted = new ArrayList<>();
+
+        @Override
+        public WalletIdentity upsertOnLogin(CaipAccountId account) {
+            upserted.add(account);
+            return new WalletIdentity(UUID.randomUUID(), account.identityKey(), "active",
+                    Instant.now(), Instant.now());
+        }
+    }
 
     static class InMemoryChallengeStore implements ChallengeStore {
         private final Map<String, Challenge> stored = new HashMap<>();

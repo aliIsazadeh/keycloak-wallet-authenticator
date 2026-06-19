@@ -38,6 +38,7 @@ dependencies {
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-starter-security-test")
+    testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
     // Testcontainers core (org.testcontainers:testcontainers) is pulled in
     // transitively by spring-boot-testcontainers and provides GenericContainer,
     // used for the Redis container (no dedicated testcontainers-redis module).

@@ -2,6 +2,7 @@ package com.w3auth.backend.config;
 
 import com.w3auth.backend.challenge.ChallengePolicy;
 import com.w3auth.backend.challenge.ChallengeStore;
+import com.w3auth.backend.identity.WalletIdentityStore;
 import com.w3auth.backend.usecase.RequestChallenge;
 import com.w3auth.backend.usecase.VerifyAndAuthenticate;
 import com.w3auth.backend.verification.EthereumSignatureVerifier;
@@ -27,7 +28,8 @@ class UseCaseConfiguration {
     @Bean
     VerifyAndAuthenticate verifyAndAuthenticate(
             ChallengeStore store, ChallengePolicy policy,
-            SignatureVerifier signatureVerifier, Clock clock) {
-        return new VerifyAndAuthenticate(store, policy, signatureVerifier, clock);
+            SignatureVerifier signatureVerifier,
+            WalletIdentityStore identityStore, Clock clock) {
+        return new VerifyAndAuthenticate(store, policy, signatureVerifier, identityStore, clock);
     }
 }

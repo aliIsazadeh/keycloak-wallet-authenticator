@@ -5,6 +5,7 @@ import com.w3auth.backend.challenge.ChallengePolicy;
 import com.w3auth.backend.challenge.ChallengeStore;
 import com.w3auth.backend.identity.CaipAccountId;
 import com.w3auth.backend.identity.Namespace;
+import com.w3auth.backend.identity.WalletIdentityStore;
 import com.w3auth.backend.verification.SignatureVerifier;
 import com.w3auth.backend.verification.SiweMessage;
 import com.w3auth.backend.verification.SiweMessageParser;
@@ -26,13 +27,16 @@ public class VerifyAndAuthenticate {
     private final ChallengeStore challengeStore;
     private final ChallengePolicy policy;
     private final SignatureVerifier signatureVerifier;
+    private final WalletIdentityStore identityStore;
     private final Clock clock;
 
     public VerifyAndAuthenticate(ChallengeStore challengeStore, ChallengePolicy policy,
-                                 SignatureVerifier signatureVerifier, Clock clock) {
+                                 SignatureVerifier signatureVerifier,
+                                 WalletIdentityStore identityStore, Clock clock) {
         this.challengeStore = challengeStore;
         this.policy = policy;
         this.signatureVerifier = signatureVerifier;
+        this.identityStore = identityStore;
         this.clock = clock;
     }
 
@@ -77,9 +81,12 @@ public class VerifyAndAuthenticate {
                     + "' but message claims '" + parsed.address() + "'");
         }
 
-        // Step 6: derive and return the authenticated account
-        // CaipAccountId.of canonicalizes the address to lowercase
-        return CaipAccountId.of(Namespace.EIP155, parsed.chainId(), parsed.address());
+        // Step 6: upsert wallet identity (first durable write) and return the authenticated account.
+        // identityStore.upsertOnLogin is called as a side-effect; the return value (WalletIdentity)
+        // is not yet needed — CaipAccountId is the JWT subject (architecture §6).
+        CaipAccountId account = CaipAccountId.of(Namespace.EIP155, parsed.chainId(), parsed.address());
+        identityStore.upsertOnLogin(account);
+        return account;
     }
 
     private void validateFields(SiweMessage parsed, Challenge challenge) throws VerificationException {
