@@ -8,16 +8,24 @@ import com.w3auth.backend.identity.CaipAccountId;
 import com.w3auth.backend.identity.Namespace;
 import com.w3auth.backend.identity.WalletIdentity;
 import com.w3auth.backend.identity.WalletIdentityStore;
+import com.w3auth.backend.session.JwtPolicy;
+import com.w3auth.backend.session.JwtService;
 import com.w3auth.backend.verification.SignatureVerifier;
 import com.w3auth.backend.verification.VerificationException;
 import com.w3auth.backend.verification.VerifiedIdentity;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
 
+import javax.crypto.SecretKey;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +48,12 @@ class VerifyAndAuthenticateTest {
     private static final ChallengePolicy POLICY = new ChallengePolicy(
             "example.com", "https://example.com/login", Duration.ofMinutes(5));
 
+    private static final SecretKey SIGNING_KEY =
+            Keys.hmacShaKeyFor(Base64.getDecoder().decode("YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="));
+    private static final Duration JWT_TTL = Duration.ofMinutes(10);
+    private static final JwtService JWT_SERVICE =
+            new JwtService(new JwtPolicy(SIGNING_KEY, JWT_TTL, "wallet-auth"));
+
     private final InMemoryChallengeStore store = new InMemoryChallengeStore();
     private final InMemoryWalletIdentityStore identityStore = new InMemoryWalletIdentityStore();
 
@@ -58,7 +72,7 @@ class VerifyAndAuthenticateTest {
     }
 
     private VerifyAndAuthenticate useCase(SignatureVerifier verifier) {
-        return new VerifyAndAuthenticate(store, POLICY, verifier, identityStore, FIXED_CLOCK);
+        return new VerifyAndAuthenticate(store, POLICY, verifier, identityStore, JWT_SERVICE, FIXED_CLOCK);
     }
 
     /** Verifier stub that always returns the given address without inspecting the request. */
@@ -69,14 +83,43 @@ class VerifyAndAuthenticateTest {
     // ── happy path ────────────────────────────────────────────────────────────
 
     @Test
-    void execute_happyPath_returnsAuthenticatedAccount() throws VerificationException {
+    void execute_happyPath_returnsAuthResultWithToken() throws VerificationException {
         Challenge c = defaultChallenge();
         store.store(c);
 
-        CaipAccountId result = useCase(returning(ADDRESS))
+        AuthResult result = useCase(returning(ADDRESS))
                 .execute(SiweMessageFactory.create(c), "dummy-sig");
 
-        assertThat(result).isEqualTo(CaipAccountId.of(Namespace.EIP155, CHAIN_ID, ADDRESS));
+        assertThat(result.token()).isNotBlank();
+        assertThat(result.expiresAt()).isEqualTo(FIXED_NOW.plus(JWT_TTL));
+    }
+
+    @Test
+    void execute_happyPath_tokenSubIsCAIP10String() throws VerificationException {
+        Challenge c = defaultChallenge();
+        store.store(c);
+
+        AuthResult result = useCase(returning(ADDRESS))
+                .execute(SiweMessageFactory.create(c), "dummy-sig");
+
+        Claims claims = Jwts.parser()
+                .verifyWith(SIGNING_KEY)
+                .clock(() -> Date.from(FIXED_NOW))
+                .build()
+                .parseSignedClaims(result.token())
+                .getPayload();
+
+        assertThat(claims.getSubject())
+                .isEqualTo(CaipAccountId.of(Namespace.EIP155, CHAIN_ID, ADDRESS).toString());
+    }
+
+    @Test
+    void execute_happyPath_upsertsIdentity() throws VerificationException {
+        Challenge c = defaultChallenge();
+        store.store(c);
+
+        useCase(returning(ADDRESS)).execute(SiweMessageFactory.create(c), "dummy-sig");
+
         assertThat(identityStore.upserted)
                 .containsExactly(CaipAccountId.of(Namespace.EIP155, CHAIN_ID, ADDRESS));
     }
@@ -85,7 +128,6 @@ class VerifyAndAuthenticateTest {
 
     @Test
     void execute_nonceNotInStore_throwsVerificationException() {
-        // No challenge stored — simulates expired or never-issued nonce
         String message = SiweMessageFactory.create(defaultChallenge());
 
         assertThatThrownBy(() -> useCase(returning(ADDRESS)).execute(message, "sig"))
@@ -111,8 +153,6 @@ class VerifyAndAuthenticateTest {
 
     @Test
     void execute_wrongDomain_throwsVerificationException() {
-        // Stored challenge has policy domain; presented message has a different domain
-        // but the same nonce — consume succeeds, domain check fails.
         store.store(defaultChallenge());
 
         String evilMessage = SiweMessageFactory.create(
@@ -125,8 +165,6 @@ class VerifyAndAuthenticateTest {
 
     @Test
     void execute_wrongChainId_throwsVerificationException() {
-        // Stored challenge was for chain "1"; presented message claims chain "137".
-        // Same nonce, so consume returns the chain-1 challenge; chainId check then fails.
         store.store(defaultChallenge());
 
         CaipAccountId polygonAccount = CaipAccountId.of(Namespace.EIP155, "137", ADDRESS);
@@ -154,7 +192,6 @@ class VerifyAndAuthenticateTest {
     void execute_wrongVersion_throwsVerificationException() {
         Challenge c = defaultChallenge();
         store.store(c);
-        // Parser accepts any non-blank version value; the use case rejects anything other than "1"
         String wrongVersionMessage = SiweMessageFactory.create(c).replace("Version: 1", "Version: 2");
 
         assertThatThrownBy(() -> useCase(returning(ADDRESS)).execute(wrongVersionMessage, "sig"))
@@ -166,8 +203,6 @@ class VerifyAndAuthenticateTest {
 
     @Test
     void execute_messageExpired_throws() {
-        // Store uses default nonce; presented message carries the same nonce but past timestamps.
-        // Consume succeeds (nonce matches); expiresAt check then fails.
         store.store(defaultChallenge());
 
         Instant pastIssuedAt = FIXED_NOW.minus(Duration.ofMinutes(10));
@@ -182,8 +217,6 @@ class VerifyAndAuthenticateTest {
 
     @Test
     void execute_issuedAtInFuture_throws() {
-        // Store uses default nonce; presented message carries the same nonce but future timestamps.
-        // Consume succeeds; issuedAt-in-future check then fails.
         store.store(defaultChallenge());
 
         Instant futureIssuedAt = FIXED_NOW.plus(Duration.ofMinutes(10));

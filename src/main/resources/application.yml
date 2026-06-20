@@ -22,6 +22,12 @@ walletauth:
     domain: ${WALLETAUTH_DOMAIN:localhost}
     uri: ${WALLETAUTH_URI:http://localhost:8080}
     nonce-ttl: ${WALLETAUTH_NONCE_TTL:5m}
+  jwt:
+    # Base64-encoded 32-byte secret. LOCAL DEV ONLY — must be overridden in production via WALLETAUTH_JWT_SECRET.
+    # Generate a production secret with: openssl rand -base64 32
+    secret: ${WALLETAUTH_JWT_SECRET:YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=}
+    ttl: ${WALLETAUTH_JWT_TTL:10m}
+    audience: ${WALLETAUTH_JWT_AUDIENCE:wallet-auth}
 
 management:
   endpoints:

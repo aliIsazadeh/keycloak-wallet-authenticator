@@ -35,6 +35,11 @@ dependencies {
     // Ethereum crypto (ecrecover, Keccak-256, secp256k1) — crypto module only, not web3j:core
     implementation("org.web3j:crypto:4.12.3")
 
+    // JWT (HS256 access tokens). jjwt-api at compile scope; impl + jackson are runtime plugins.
+    implementation("io.jsonwebtoken:jjwt-api:0.12.6")
+    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
+    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
+
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-starter-security-test")

@@ -3,6 +3,7 @@ package com.w3auth.backend.config;
 import com.w3auth.backend.challenge.ChallengePolicy;
 import com.w3auth.backend.challenge.ChallengeStore;
 import com.w3auth.backend.identity.WalletIdentityStore;
+import com.w3auth.backend.session.JwtService;
 import com.w3auth.backend.usecase.RequestChallenge;
 import com.w3auth.backend.usecase.VerifyAndAuthenticate;
 import com.w3auth.backend.verification.EthereumSignatureVerifier;
@@ -29,7 +30,8 @@ class UseCaseConfiguration {
     VerifyAndAuthenticate verifyAndAuthenticate(
             ChallengeStore store, ChallengePolicy policy,
             SignatureVerifier signatureVerifier,
-            WalletIdentityStore identityStore, Clock clock) {
-        return new VerifyAndAuthenticate(store, policy, signatureVerifier, identityStore, clock);
+            WalletIdentityStore identityStore,
+            JwtService jwtService, Clock clock) {
+        return new VerifyAndAuthenticate(store, policy, signatureVerifier, identityStore, jwtService, clock);
     }
 }
