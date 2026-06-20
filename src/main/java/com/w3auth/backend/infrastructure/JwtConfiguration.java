@@ -1,5 +1,6 @@
 package com.w3auth.backend.infrastructure;
 
+import com.w3auth.backend.security.JwtAuthenticationFilter;
 import com.w3auth.backend.session.JwtPolicy;
 import com.w3auth.backend.session.JwtService;
 import io.jsonwebtoken.security.Keys;
@@ -8,6 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import javax.crypto.SecretKey;
+import java.time.Clock;
 import java.util.Base64;
 
 @Configuration
@@ -29,5 +31,10 @@ class JwtConfiguration {
     @Bean
     JwtService jwtService(JwtPolicy jwtPolicy) {
         return new JwtService(jwtPolicy);
+    }
+
+    @Bean
+    JwtAuthenticationFilter jwtAuthenticationFilter(JwtService jwtService, Clock clock) {
+        return new JwtAuthenticationFilter(jwtService, clock);
     }
 }

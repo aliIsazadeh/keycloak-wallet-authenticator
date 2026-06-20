@@ -1,6 +1,8 @@
 package com.w3auth.backend.session;
 
 import com.w3auth.backend.identity.CaipAccountId;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 
 import java.time.Duration;
@@ -9,13 +11,12 @@ import java.util.Date;
 import java.util.UUID;
 
 /**
- * Issues HS256 access JWTs for authenticated wallet accounts.
+ * Issues and parses HS256 access JWTs for authenticated wallet accounts.
  *
  * <p>Core — no Spring annotations. Wired in {@code infrastructure.JwtConfiguration}.
  *
- * <p>Callers pass an explicit {@code issuedAt} so that the {@code iat} embedded in
- * the token and the {@code expiresAt} returned to the controller are derived from the
- * same instant, eliminating any clock-tick drift.
+ * <p>Callers pass an explicit {@code now} so that clock-sensitive operations
+ * (issuance timestamp, expiry validation) are fully reproducible in tests.
  */
 public class JwtService {
 
@@ -42,6 +43,27 @@ public class JwtService {
                 .audience().add(policy.audience()).and()
                 .signWith(policy.signingKey())
                 .compact();
+    }
+
+    /**
+     * Parses and validates a compact JWT string.
+     *
+     * <p>Validates signature, expiry (relative to {@code now}), and audience.
+     *
+     * @param token the compact JWT string
+     * @param now   the clock instant to use for expiry validation
+     * @return the verified claims payload
+     * @throws JwtException if the token is expired, has a bad signature, is malformed,
+     *                      or fails audience validation
+     */
+    public Claims parse(String token, Instant now) {
+        return Jwts.parser()
+                .verifyWith(policy.signingKey())
+                .clock(() -> Date.from(now))
+                .requireAudience(policy.audience())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 
     /** Exposes the configured TTL so callers can derive {@code expiresAt} without re-parsing the token. */

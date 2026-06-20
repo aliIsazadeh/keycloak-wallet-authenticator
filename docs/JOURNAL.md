@@ -46,7 +46,7 @@ flowchart LR
 | `api`            | REST controllers, request/response DTOs                             | M1 partial ✅ |
 | `verification`   | `SignatureVerifier` (interface), `EthereumSignatureVerifier`, SIWE parser | M1 ✅  |
 | `session`        | `JwtPolicy`, `JwtService` (access JWT); refresh token logic, `SessionStore` (port) | M1 partial ✅ / M2 ⬜ |
-| `security`       | Spring Security config; JWT filter (M2)                             | M1 partial ✅ / M2 ⬜ |
+| `security`       | Spring Security config; `JwtAuthenticationFilter`                   | M2 step 1 ✅         |
 
 ---
 
@@ -56,7 +56,7 @@ flowchart LR
 |-----------|------|--------|
 | **M0** | Project skeleton; CAIP-10 identity; Redis challenge store with atomic nonce; `/challenge` endpoint; docker-compose; ArchUnit guard | Steps 1–5 done ✅; step 6 (controller) next ⬜ |
 | **M1** | SIWE parsing + full field validation; EOA `ecrecover`; signer-equals-claim check; identity upsert; access JWT. First end-to-end login | Steps 1–5 done ✅ |
-| **M2** | Refresh tokens; rotation; reuse detection (family revocation); logout. Security audit pass | ⬜ |
+| **M2** | Refresh tokens; rotation; reuse detection (family revocation); logout. Security audit pass | Step 1 done ✅ (JWT filter + `/me`); step 2 next ⬜ |
 | **M3** | Smart-contract wallets (EIP-1271 + EIP-6492); RPC dependency; per-`(chainId, address, msgHash)` caching. Likely triggers `verification` module split | ⬜ |
 | **M4** | Second namespace (Solana / Ed25519) to prove and harden the abstraction; only then a real protocol registry | ⬜ |
 
@@ -65,6 +65,48 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 ---
 
 ## Part 2 — Step Log
+
+---
+
+## M2 · step 1 — JWT authentication filter + protected endpoint   (commit <hash>)
+
+**What:** Five files created or modified; two test files created or modified. Everything on branch `claude/m2-jwt-filter`.
+
+*Core change — `JwtService.parse`:*
+`JwtService` gained a second method: `parse(String token, Instant now) → Claims`. It calls `Jwts.parser().verifyWith(policy.signingKey()).clock(() -> Date.from(now)).requireAudience(policy.audience()).build().parseSignedClaims(token).getPayload()`. The method enforces three things in one call: signature (HS256 with the same key used in `issue`), expiry (the synthetic clock means the test can pass any `Instant` as "now" without sleeping), and audience (a token issued for a different service — different `aud` claim — is rejected here, not silently accepted). It throws `JwtException`, which is JJWT's base class covering `ExpiredJwtException`, `MalformedJwtException`, `SignatureException`, and the audience mismatch variant; callers catch the base class so no new exception hierarchies are needed.
+
+*Filter — `JwtAuthenticationFilter`:*
+`OncePerRequestFilter` in `security/`. Constructor accepts `JwtService` and `Clock` (no `@Component` — see Why below). `doFilterInternal` reads the `Authorization` header; if absent or not starting with `"Bearer "` it falls through and calls `chain.doFilter` without touching the `SecurityContextHolder` — the request continues unauthenticated, which is correct: the security config's `anyRequest().authenticated()` rule will produce the 401, not the filter. When a bearer token is present, it calls `jwtService.parse(token, clock.instant())`. On success it constructs a `UsernamePasswordAuthenticationToken` with the CAIP-10 subject as principal, `null` credentials, and an empty authority list, and sets it in `SecurityContextHolder`. On any `JwtException` it calls `SecurityContextHolder.clearContext()` and continues the chain — fail closed, never 500.
+
+*Security wiring — `SecurityConfiguration`:*
+`filterChain` now accepts `JwtAuthenticationFilter` as a bean parameter (Spring injects it from `JwtConfiguration`). `.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)` places it in the chain before Spring's standard auth filter. The `permitAll` rule was narrowed from the wildcard `.requestMatchers("/v1/auth/**")` to explicit `.requestMatchers("/v1/auth/challenge", "/v1/auth/verify")` — everything else, including `/v1/auth/me`, now requires authentication.
+
+*Filter bean — `JwtConfiguration`:*
+`@Bean JwtAuthenticationFilter jwtAuthenticationFilter(JwtService jwtService, Clock clock)` added. The `Clock` bean already existed in `ClockConfiguration`; `JwtService` was already wired here. No new dependencies.
+
+*Protected endpoint — `MeController`:*
+`GET /v1/auth/me` in `api/`. Returns `Map.of("sub", (String) authentication.getPrincipal())`. Spring injects the `Authentication` from `SecurityContextHolder` — the filter set it, so `getPrincipal()` is the CAIP-10 string. This is a real endpoint (not test-only): it gives clients a way to confirm their token is valid and see who they are authenticated as.
+
+*Tests:*
+`JwtAuthenticationFilterTest` — 5 tests using the real filter, real `JwtService`, real `SecurityConfiguration`, and an inner `MeEndpoint` that returns the principal as a plain `String`. Tests: no `Authorization` header → 401; valid token → 200, body = CAIP-10 string; token issued at 2020 (6 years ago, TTL 10 min) → 401; token signed with a different key (impostor `JwtService` instance) → 401; `Bearer not.a.jwt` → 401 not 500. All five drive real tokens (not stubbed `JwtException` throws) through the real filter.
+
+`SecurityConfigurationTest` — updated. Previous test asserted `/v1/auth/ping` was public under the wildcard rule. That path no longer matches `permitAll` after the narrowing. Tests now use `/v1/auth/challenge` and `/v1/auth/verify` (real public paths). A `TestConfig` inner class was added to supply the `JwtAuthenticationFilter` bean that `SecurityConfiguration.filterChain` now requires as a parameter.
+
+**Why `JwtService.parse` not a separate `JwtValidator` class:** rule of three. `JwtService` already owns issue; parse is the natural inverse and has no competing design pulling it elsewhere. A separate `JwtValidator` with one method would be an abstraction without a real second case. The parse method is testable through the filter tests without any additional seam.
+
+**Why `JwtAuthenticationFilter` is not `@Component`:** Spring Boot's servlet-filter auto-registration scans for `Filter` beans and registers them into the servlet container's filter chain. A `@Component` filter that is also registered in the security chain runs *twice* per request: once via Spring Security, once via the servlet container. The fix is to never mark it `@Component`. Instead it is a bean in `JwtConfiguration` — Spring Security picks it up as an explicit `addFilterBefore` argument; Boot's `FilterRegistrationBean` auto-registration does not fire because there is no `@Component`.
+
+**Why `requireAudience` is in `parse`:** without it, a token issued for a different service that shares the same signing key would be accepted. `aud` validation is the defense at the boundary between issuance and acceptance contexts. The filter tests don't exercise this case directly (no multi-service setup), but the method enforces it unconditionally — a token reaching the wrong service fails here.
+
+**Why fail-closed means clearing context and continuing (not aborting):** aborting the filter chain inside a `GenericFilterBean` subclass means writing the response manually — status, headers, body — duplicating the security config's entry-point logic. The cleaner approach is: clear any stale auth from the context, let `chain.doFilter` continue, and let Spring Security's `ExceptionTranslationFilter` call the `HttpStatusEntryPoint(UNAUTHORIZED)` when it finds no authenticated principal on the protected route. One code path for 401 production, not two.
+
+**Why the `MeEndpoint` inner class in the filter test returns `String` not `Map`:** the filter test's `@SpringBootTest(classes = {...})` loads only `SecurityConfiguration`, `TestConfig`, and `MeEndpoint` — not `WebMvcAutoConfiguration` or `JacksonAutoConfiguration`. Without Jackson in the context, Spring cannot serialize `Map<String, String>` to JSON; it returns 406 Not Acceptable. The real `MeController` (which runs under the full app context, which has Jackson) correctly returns `{"sub": "..."}`. The test endpoint uses `String` to avoid pulling in autoconfigs unrelated to what the test is validating.
+
+**Learned:** The double-registration trap (`@Component` filter + `addFilterBefore`) is quiet — the filter runs twice, the second execution is a no-op on the happy path (auth is already set), but the overhead and the subtlety both cost. The rule is: filters wired explicitly into the security chain must have no `@Component`. Declare them as `@Bean` in a `@Configuration` class; Spring Security owns the registration.
+
+The 406 error on the valid-token test made the cause immediately clear in hindsight: a minimal `@SpringBootTest(classes = {...})` context is not a web context — it has no content negotiation stack. The correct test design is to match the return type to what the context can serialize, not to bring in autoconfigs to support a richer return type.
+
+**Open / next:** M2 step 2 — refresh tokens. `RefreshSession` use case, refresh token entity in Postgres, rotation + reuse detection (family revocation), `Logout` endpoint. `SecurityConfiguration` is now complete for V1 access-token validation. The refresh flow will add a new endpoint pair (`/v1/auth/refresh`, `/v1/auth/logout`) and two new use cases.
 
 ---
 
