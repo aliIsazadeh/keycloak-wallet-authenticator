@@ -17,8 +17,12 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -63,7 +67,46 @@ class RedisChallengeStoreTest {
         assertThat(consumed).contains(challenge);
     }
 
-    // TODO: concurrency test — N threads consume same nonce, assert exactly one success (regression guard for atomicity)
+    @Test
+    void consume_concurrentThreads_exactlyOneSucceeds() throws InterruptedException {
+        int threadCount = 8;
+        Challenge challenge = sampleChallenge(Nonce.generate());
+        store.store(challenge);
+
+        CountDownLatch startGun = new CountDownLatch(1);
+        List<Optional<Challenge>> results = new ArrayList<>(threadCount);
+        for (int i = 0; i < threadCount; i++) results.add(null);
+        List<AtomicReference<Throwable>> errors = new ArrayList<>(threadCount);
+        List<Thread> threads = new ArrayList<>(threadCount);
+
+        for (int i = 0; i < threadCount; i++) {
+            final int idx = i;
+            errors.add(new AtomicReference<>());
+            Thread t = Thread.ofVirtual().start(() -> {
+                try {
+                    startGun.await();
+                    results.set(idx, store.consume(challenge.nonce()));
+                } catch (Throwable ex) {
+                    errors.get(idx).set(ex);
+                }
+            });
+            threads.add(t);
+        }
+
+        startGun.countDown();
+        for (Thread t : threads) t.join(5_000);
+
+        for (int i = 0; i < threadCount; i++) {
+            assertThat(errors.get(i).get())
+                    .as("thread %d threw an exception", i)
+                    .isNull();
+        }
+
+        long successes = results.stream().filter(Optional::isPresent).count();
+        long empties   = results.stream().filter(Optional::isEmpty).count();
+        assertThat(successes).as("exactly one thread should get the challenge").isEqualTo(1);
+        assertThat(empties).as("all other threads should get empty").isEqualTo(threadCount - 1);
+    }
 
     @Test
     void consumeIsSingleUse() {

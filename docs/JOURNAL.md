@@ -68,6 +68,24 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
+## M1 · cleanup — MethodArgumentNotValidException handler + Redis GETDEL concurrency guard   (commit <hash>)
+
+**What:** Two deferred items closed in one commit.
+
+`GlobalExceptionHandler` gained a `MethodArgumentNotValidException` handler. Spring's default 400 body for `@Valid` failures serializes internal `BindingResult` details — field paths, object names, binding internals — that no API client should see. The new handler collects `getFieldErrors()` into a human-readable `"field must not be blank"` string and returns the same `{"error": "..."}` shape as the existing `IllegalArgumentException` handler. The two existing 400 tests in `ChallengeControllerTest` now also assert `jsonPath("$.error").isString()` and `.isNotEmpty()`, so the clean shape is part of the test contract, not just an implementation detail.
+
+`RedisChallengeStoreTest` gained `consume_concurrentThreads_exactlyOneSucceeds`: 8 virtual threads behind a `CountDownLatch` start-gun all call `store.consume(sameNonce)` against the real `RedisChallengeStore` adapter. Assertions: no thread threw, exactly 1 `Optional` is present, 7 are empty. The TODO comment from M0 step 4 is removed.
+
+**Why the handler belongs in the advice, not suppressed by a Spring property:** the leaky default is a Spring framework behaviour; suppressing it would require a custom `MessageConverter` or `server.error.*` properties that apply globally and unpredictably. A targeted `@ExceptionHandler` is explicit, testable, and scoped to this API's error contract.
+
+**Why the concurrency test calls `RedisChallengeStore.consume` through the adapter:** a test that fires raw `GETDEL` via `redisTemplate` directly would prove atomicity at the Redis level, not at the adapter level. The regression it guards against is a future refactor that replaces `GETDEL` with a `GET`-then-`DEL` pair inside the adapter — that would break the atomic guarantee while leaving all Redis-level tests green. Calling through the adapter is the only test that catches that refactor. This is the same reasoning as `WalletIdentityConcurrencyTest` for the Postgres upsert.
+
+**Learned:** A Docker-down run made Testcontainers cache a "no Docker environment" failure across the entire JVM process — subsequent tests in the same run hit the cached failure without trying Docker again. The test showed red, but the code was correct. The lesson: a red Testcontainers result with `"Previous attempts to find a Docker environment failed. Will not retry."` is an infrastructure failure, not a test failure. A test is only counted as done once it has passed on a run where Docker was confirmed up before `./gradlew test`.
+
+**Open / next:** M2 — refresh tokens, rotation, reuse detection, logout. `SecurityConfiguration` needs the JWT filter wired for protected endpoints.
+
+---
+
 ## M1 · step 5 — Access JWT issuance + POST /v1/auth/verify   (commit <hash>)
 
 **What:** Completed the M1 end-to-end login. Nine files created, seven modified.

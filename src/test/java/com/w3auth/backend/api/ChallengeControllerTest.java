@@ -70,21 +70,25 @@ class ChallengeControllerTest {
     }
 
     @Test
-    void blankAccountId_returns400() throws Exception {
+    void blankAccountId_returns400WithCleanErrorShape() throws Exception {
         mvc.perform(post("/v1/auth/challenge")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"accountId":""}
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").isString())
+                .andExpect(jsonPath("$.error").isNotEmpty());
     }
 
     @Test
-    void missingAccountId_returns400() throws Exception {
+    void missingAccountId_returns400WithCleanErrorShape() throws Exception {
         mvc.perform(post("/v1/auth/challenge")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").isString())
+                .andExpect(jsonPath("$.error").isNotEmpty());
     }
 
     @Test
