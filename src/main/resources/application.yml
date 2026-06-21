@@ -28,6 +28,8 @@ walletauth:
     secret: ${WALLETAUTH_JWT_SECRET:YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=}
     ttl: ${WALLETAUTH_JWT_TTL:10m}
     audience: ${WALLETAUTH_JWT_AUDIENCE:wallet-auth}
+  refresh:
+    ttl: ${WALLETAUTH_REFRESH_TTL:30d}
 
 management:
   endpoints:

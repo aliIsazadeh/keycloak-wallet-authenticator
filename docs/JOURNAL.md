@@ -68,6 +68,46 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
+## M2 · step 4a — Refresh token storage layer   (commit <hash>)
+
+**What:** Sixteen files created or modified across three layers (14 new, 2 modified — application.yml and this journal entry).
+
+*Flyway:* `V3__refresh_token.sql` — `refresh_token` table with `id` (UUID PK), `family_id` (UUID NOT NULL), `identity_id` (UUID NOT NULL FK→`wallet_identity`), `token_hash` (TEXT NOT NULL UNIQUE), `replaced_by` (UUID self-FK, nullable), `expires_at` (TIMESTAMPTZ NOT NULL), `revoked_at` (TIMESTAMPTZ NULL), `created_at` (TIMESTAMPTZ NOT NULL). One explicit index on `family_id` for `revokeFamily` scans; the UNIQUE constraint on `token_hash` creates its own implicit B-tree index (no duplicate explicit index).
+
+*Core (no Spring/JPA):* `RefreshToken` — immutable record, all fields. `TokenGrant` — holder of `rawToken` (the 32-byte CSPRNG value, base64url) plus the row snapshot. `RefreshTokenStore` — port interface: `issue(identityId, familyId)`, `rotate(rawToken)`, `revokeFamily(familyId)`. `RefreshTokenException` — `RuntimeException`, callers map to HTTP 401. `RefreshTokenPolicy` — record with `Duration ttl`, validates positive TTL in compact constructor.
+
+*Infrastructure:* `RefreshTokenEntity` (JPA entity, package-private, no setters for immutable fields). `RefreshTokenRepository` — Spring Data JPA with `findByTokenHash`, `revokeFamily` (native UPDATE on family), `claimForRotation` (native guarded UPDATE, returns `int`), `expireByHash` (test-only, back-dates `expires_at`). `JpaRefreshTokenStore` — `@Transactional` on `rotate()`, read-time reuse classification, INSERT before guarded UPDATE (self-FK ordering). `RefreshFamilyRevoker` — separate bean, `REQUIRES_NEW` propagation so revoke commits even when `rotate()` throws and rolls back. `RefreshConfiguration` / `RefreshProperties` — bind `walletauth.refresh.ttl` from `application.yml`.
+
+*Token storage:* 32-byte CSPRNG, base64url-no-padding for the wire token. SHA-256 hex stored in the row (not bcrypt: the token is already 256-bit random, bcrypt's cost factor only defends low-entropy secrets such as passwords).
+
+*Tests:* `JpaRefreshTokenStoreTest` — 6 tests (issue, rotate happy path, sequential reuse triggers family revocation, rotate-after-revokeFamily, unknown token, expired token). All methods use `NOT_SUPPORTED` propagation; `expireByHash` helper used to simulate expiry without a custom clock. `RefreshTokenConcurrencyTest` — 1 test, described below.
+
+**Why `rotate()` uses plain `@Transactional` with no isolation override:** READ_COMMITTED is the Postgres default and is sufficient because reuse is classified at *read time* (when the row is first loaded), not at UPDATE time. If `replaced_by` is already set when the SELECT runs, this transaction started after the prior rotation committed — there was no temporal overlap — and the presenter holds a spent token. If `replaced_by` is NULL at read time, the transaction genuinely overlapped the winner's (or is the only caller). In that case, a guarded UPDATE (`WHERE replaced_by IS NULL`) decides the winner: under READ_COMMITTED, concurrent UPDATEs to the same row serialize via Postgres row-level locking — the loser's UPDATE waits, then gets 0 rows after the winner commits and the WHERE clause fails. 0 rows = benign race. Throw without revoking; `@Transactional` rolls back, undoing the INSERT so no orphan row persists. REPEATABLE_READ or SERIALIZABLE would prevent the loser's transaction from even seeing the winner's committed data on a re-read, but there is no re-read — the decision is already made from the first SELECT. Higher isolation would only cause spurious serialization failures with no correctness gain.
+
+**Why INSERT before guarded UPDATE:** `replaced_by` is a self-FK. The UPDATE sets `replaced_by = :newId`; Postgres checks that `newId` exists in `refresh_token(id)` at statement execution time. If the UPDATE runs before the INSERT, the FK check fails. `entityManager.flush()` after the INSERT forces the statement to Postgres before the UPDATE fires. No `DEFERRABLE INITIALLY DEFERRED` is needed because the ordering is deterministic within the transaction.
+
+**Why `RefreshFamilyRevoker` is a separate bean with `REQUIRES_NEW`:** `rotate()` calls `revokeFamily()` only when reuse is detected, then immediately throws. `@Transactional` will roll back `rotate()`'s entire transaction on throw — undoing the INSERT, yes, but also undoing any revocation that ran inside the same transaction. REQUIRES_NEW suspends `rotate()`'s transaction, opens and commits an independent transaction for the revoke, then resumes — so the revoke is durable regardless of whether `rotate()`'s throw triggers a rollback.
+
+**Why the concurrency test targets `claimForRotation` directly, not full `rotate()`:** This decision required choosing among three options, and the reasoning is the main lesson of this step.
+
+*Option (a) — PlatformTransactionManager two-latch gating:* Force overlap by having the test open each thread's transaction explicitly, use a two-latch to pause all threads after their SELECTs, then fire the INSERTs + UPDATEs simultaneously. This passes but is rejected: it moves the transaction boundary out of the code under test. The test's outer `rollback(status)` call provides the orphan-INSERT-undone guarantee instead of `rotate()`'s own `@Transactional`. A green result asserts the test harness works, not the store.
+
+*Option (b) — Delete the concurrency test entirely:* The benign-loser path is verifiable by reading the code (`claimed == 0 → throw, no revokeFamily call`). Viable, but loses the atomic-claim guarantee entirely — nothing then proves that only one concurrent UPDATE can win.
+
+*Option (c, chosen) — Test `claimForRotation` atomicity directly:* A single SQL `UPDATE` genuinely overlaps at the DB the same way `INSERT … ON CONFLICT DO UPDATE` does in `WalletIdentityConcurrencyTest`: all 8 statements are in-flight simultaneously, Postgres row-level locking serializes them, exactly one gets 1 row. The full `rotate()` pipeline cannot produce genuine pipeline overlap under virtual-thread scheduling (confirmed by SQL log: winner's SELECT + INSERT + UPDATE committed before any other thread issued its first SELECT — sequential reuse, store correct, test premise unachievable). Testing the granularity that *can* be tested honestly — the atomic primitive the guarantee actually rests on — is better than faking overlap at a coarser granularity.
+
+The residual gap is named in the test's Javadoc: full `rotate()` is not concurrently tested; the 0-row benign-loser branch is covered by reading the method.
+
+**Why pre-inserting THREAD_COUNT candidate rows for the FK:** `replaced_by` is a self-FK. The winning UPDATE sets `replaced_by = :newId`, which Postgres checks against `refresh_token(id)`. Unbacked UUIDs would fail the FK for the winner. Losers produce 0 rows and never trigger the FK check. Each candidate row uses a distinct `familyId` so it does not appear in the post-race revocation count for the row under test.
+
+**Learned:** A concurrency test is only meaningful if the environment can actually produce the concurrency it asserts. When it cannot — because a multi-step pipeline serializes under virtual-thread scheduling — the right response is not to engineer fake overlap (PlatformTransactionManager gating, extra latches), but to identify the atomic statement the guarantee actually rests on and test that instead. The SQL log is the diagnostic: it shows exactly when each statement reaches Postgres, making "genuine overlap vs. sequential" unambiguous. If the log shows the winner committed before others even issued a SELECT, the overlap was never real.
+
+Faking overlap produces a green test that asserts nothing. Naming the gap and testing what can be tested honestly produces a test that actually catches a regression (a non-atomic implementation of `claimForRotation` would break it).
+
+**Open / next:** M2 steps 4b–4c — `RefreshSession` and `Logout` use cases, `/v1/auth/refresh` and `/v1/auth/logout` endpoints. The storage layer is complete and tested; the use cases and controllers above it are next.
+
+---
+
 ## M2 · step 1 — JWT authentication filter + protected endpoint   (commit <hash>)
 
 **What:** Five files created or modified; two test files created or modified. Everything on branch `claude/m2-jwt-filter`.
