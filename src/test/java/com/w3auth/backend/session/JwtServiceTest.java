@@ -38,16 +38,16 @@ class JwtServiceTest {
     // ── claims correctness ────────────────────────────────────────────────────
 
     @Test
-    void issue_subIsCAIP10String() {
-        String token = service.issue(ACCOUNT, FIXED_NOW);
+    void issue_subIsIdentityKey() {
+        String token = service.issue(ACCOUNT.identityKey(), FIXED_NOW);
         Claims claims = parseClaims(token, SIGNING_KEY, FIXED_NOW);
 
-        assertThat(claims.getSubject()).isEqualTo(ACCOUNT.toString());
+        assertThat(claims.getSubject()).isEqualTo(ACCOUNT.identityKey().toJwtSubject());
     }
 
     @Test
     void issue_expIsIatPlusTtl() {
-        String token = service.issue(ACCOUNT, FIXED_NOW);
+        String token = service.issue(ACCOUNT.identityKey(), FIXED_NOW);
         Claims claims = parseClaims(token, SIGNING_KEY, FIXED_NOW);
 
         Instant iat = claims.getIssuedAt().toInstant();
@@ -59,7 +59,7 @@ class JwtServiceTest {
 
     @Test
     void issue_jtiIsPresent() {
-        String token = service.issue(ACCOUNT, FIXED_NOW);
+        String token = service.issue(ACCOUNT.identityKey(), FIXED_NOW);
         Claims claims = parseClaims(token, SIGNING_KEY, FIXED_NOW);
 
         assertThat(claims.getId()).isNotBlank();
@@ -67,7 +67,7 @@ class JwtServiceTest {
 
     @Test
     void issue_audienceContainsConfiguredValue() {
-        String token = service.issue(ACCOUNT, FIXED_NOW);
+        String token = service.issue(ACCOUNT.identityKey(), FIXED_NOW);
         Claims claims = parseClaims(token, SIGNING_KEY, FIXED_NOW);
 
         assertThat(claims.getAudience()).isEqualTo(Set.of(AUDIENCE));
@@ -77,7 +77,7 @@ class JwtServiceTest {
 
     @Test
     void issue_wrongSecret_failsVerification() {
-        String token = service.issue(ACCOUNT, FIXED_NOW);
+        String token = service.issue(ACCOUNT.identityKey(), FIXED_NOW);
 
         SecretKey wrongKey = Keys.hmacShaKeyFor(Base64.getDecoder().decode(
                 "enl4YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="));  // different key
@@ -90,7 +90,7 @@ class JwtServiceTest {
 
     @Test
     void issue_clockAdvancedPastExpiry_parserThrowsExpiredJwtException() {
-        String token = service.issue(ACCOUNT, FIXED_NOW);
+        String token = service.issue(ACCOUNT.identityKey(), FIXED_NOW);
 
         // Advance the clock one second past the expiry
         Instant afterExpiry = FIXED_NOW.plus(TTL).plusSeconds(1);

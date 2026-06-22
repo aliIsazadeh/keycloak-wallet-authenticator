@@ -29,14 +29,15 @@ public class JwtService {
     /**
      * Issues a signed access JWT.
      *
-     * @param account  the authenticated wallet — becomes the {@code sub} claim (CAIP-10 string)
-     * @param issuedAt the moment of issuance (caller-controlled for testability)
+     * @param identityKey the wallet identity — sub is set to {@code namespace:address}
+     *                    via {@link CaipAccountId.IdentityKey#toJwtSubject()} (no chainId)
+     * @param issuedAt    the moment of issuance (caller-controlled for testability)
      * @return the compact, signed JWT string
      */
-    public String issue(CaipAccountId account, Instant issuedAt) {
+    public String issue(CaipAccountId.IdentityKey identityKey, Instant issuedAt) {
         Instant exp = issuedAt.plus(policy.ttl());
         return Jwts.builder()
-                .subject(account.toString())
+                .subject(identityKey.toJwtSubject())
                 .id(UUID.randomUUID().toString())
                 .issuedAt(Date.from(issuedAt))
                 .expiration(Date.from(exp))

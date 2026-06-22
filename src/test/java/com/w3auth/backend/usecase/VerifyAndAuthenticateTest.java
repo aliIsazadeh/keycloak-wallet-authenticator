@@ -110,7 +110,7 @@ class VerifyAndAuthenticateTest {
                 .getPayload();
 
         assertThat(claims.getSubject())
-                .isEqualTo(CaipAccountId.of(Namespace.EIP155, CHAIN_ID, ADDRESS).toString());
+                .isEqualTo(CaipAccountId.of(Namespace.EIP155, CHAIN_ID, ADDRESS).identityKey().toJwtSubject());
     }
 
     @Test

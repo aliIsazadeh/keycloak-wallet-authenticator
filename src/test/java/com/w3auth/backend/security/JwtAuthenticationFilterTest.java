@@ -71,17 +71,17 @@ class JwtAuthenticationFilterTest {
 
     @Test
     void validToken_returns200WithCorrectSub() throws Exception {
-        String token = jwtService.issue(ACCOUNT, Instant.now());
+        String token = jwtService.issue(ACCOUNT.identityKey(), Instant.now());
 
         mvc.perform(get("/v1/auth/me").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(content().string(ACCOUNT.toString()));
+                .andExpect(content().string(ACCOUNT.identityKey().toJwtSubject()));
     }
 
     @Test
     void expiredToken_isUnauthorized() throws Exception {
         // Token issued far in the past; TTL is 10 min so it expired ~6 years ago
-        String token = jwtService.issue(ACCOUNT, Instant.parse("2020-01-01T00:00:00Z"));
+        String token = jwtService.issue(ACCOUNT.identityKey(), Instant.parse("2020-01-01T00:00:00Z"));
 
         mvc.perform(get("/v1/auth/me").header("Authorization", "Bearer " + token))
                 .andExpect(status().isUnauthorized());
@@ -93,7 +93,7 @@ class JwtAuthenticationFilterTest {
                 Base64.getDecoder().decode("enl4YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="));
         JwtService impostor = new JwtService(
                 new JwtPolicy(wrongKey, Duration.ofMinutes(10), "wallet-auth"));
-        String token = impostor.issue(ACCOUNT, Instant.now());
+        String token = impostor.issue(ACCOUNT.identityKey(), Instant.now());
 
         mvc.perform(get("/v1/auth/me").header("Authorization", "Bearer " + token))
                 .andExpect(status().isUnauthorized());

@@ -129,5 +129,14 @@ public final class CaipAccountId {
      * every EVM chain, so it must not split one wallet into many identities.
      */
     public record IdentityKey(Namespace namespace, String address) {
+
+        /**
+         * The canonical JWT subject for this identity: {@code namespace:address}
+         * (two-part, no chainId). Single authoritative definition — callers must
+         * not concatenate these fields themselves.
+         */
+        public String toJwtSubject() {
+            return namespace.value() + ":" + address;
+        }
     }
 }

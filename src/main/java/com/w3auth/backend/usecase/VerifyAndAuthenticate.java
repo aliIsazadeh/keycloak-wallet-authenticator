@@ -92,7 +92,7 @@ public class VerifyAndAuthenticate {
         // Step 7: issue access JWT. Capture issuedAt once so the embedded iat and the
         // returned expiresAt are derived from the same instant — no clock-tick drift.
         Instant issuedAt = clock.instant();
-        String token = jwtService.issue(account, issuedAt);
+        String token = jwtService.issue(account.identityKey(), issuedAt);
         return new AuthResult(token, issuedAt.plus(jwtService.ttl()));
     }
 

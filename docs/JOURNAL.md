@@ -68,6 +68,49 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
+## M2 · prep (before 4b-i) — JWT subject from three-part CAIP-10 to identity-only   (commit <hash>)
+
+**What:** Five files changed, no new files, test count stays 105.
+
+*Production:*
+- `CaipAccountId.IdentityKey` (inner record) — added `toJwtSubject()`: returns `namespace().value() + ":" + address()`. Single definition of the `namespace:address` format. No caller builds this string manually.
+- `JwtService.issue()` — parameter changed from `CaipAccountId` to `CaipAccountId.IdentityKey`; internally calls `identityKey.toJwtSubject()` for the `sub` claim. The type change makes the wrong kind of argument a compile error, not a runtime divergence.
+- `VerifyAndAuthenticate.execute()` — call site updated to `jwtService.issue(account.identityKey(), issuedAt)`. One-line change; the `identityKey()` accessor already existed.
+
+*Tests (assertion changes only, no structural change):*
+- `JwtServiceTest` — renamed `issue_subIsCAIP10String` → `issue_subIsIdentityKey`; assertion changed to `ACCOUNT.identityKey().toJwtSubject()`; all remaining `service.issue(ACCOUNT, …)` calls updated to `service.issue(ACCOUNT.identityKey(), …)`.
+- `VerifyAndAuthenticateTest` — sub assertion changed from `CaipAccountId.of(…).toString()` (three-part) to `.identityKey().toJwtSubject()` (two-part).
+- `JwtAuthenticationFilterTest` — all three `jwtService.issue(ACCOUNT, …)` / `impostor.issue(ACCOUNT, …)` calls updated; `/me` body expectation changed from `ACCOUNT.toString()` to `ACCOUNT.identityKey().toJwtSubject()`.
+- `VerifyFlowE2ETest` — unchanged. Its assertions (`startsWith("eip155:")`, `containsIgnoringCase(address)`) were already format-agnostic; the comment in the test even reads "identity key is namespace:address (no chainId — per architecture §2)." It passed without touching it.
+
+**Why the sub was wrong and why it mattered here:**
+
+The M1 JWT sub was set to `account.toString()` — the full three-part CAIP-10 string `eip155:1:0x…`, chainId included. This was a latent inconsistency with locked decision #2 ("address is identity; chainId is session context") that went unnoticed in M1 because `VerifyAndAuthenticate` has the full `CaipAccountId` including chainId, so nothing broke.
+
+The inconsistency surfaced when scoping `RefreshSession` (step 4b-i). `rotate()` returns a `TokenGrant` whose `RefreshToken` carries `identityId` (a UUID) but not chainId. To reconstruct the same JWT subject as `/verify`, `RefreshSession` must look up the `WalletIdentity` row by that UUID — but `wallet_identity` stores `(namespace, address)` with no chain reference, because the schema enforces `UNIQUE(namespace, address)` and never had a `chain_id` column. The data the refresh path has available is exactly the identity key, nothing more.
+
+**Rejected alternatives:**
+
+*Option A — Store chainId on the refresh token row:* Add a `chain_id` column to `refresh_token`, populate it from the `/verify` path, retrieve it in `RefreshSession`. Rejected: chainId is already defined in the architecture as session context, not durable identity state. Storing it on a long-lived row would mean different chains for the same wallet produce different JWT subjects from `/refresh`, which is observably wrong from a session-continuity standpoint.
+
+*Option B — Fabricate a chainId in `RefreshSession`:* Pick a sentinel value (e.g. `"0"` or `"1"`) and construct a `CaipAccountId` with it just to call `jwtService.issue()`. Rejected immediately: fabricating data to satisfy a method signature is evidence the signature is wrong. The caller shouldn't need to know or invent a chainId to produce an access token for a wallet that is identified by address alone.
+
+*Option C (chosen) — Make the subject carry identity, not session context:* `JwtService.issue()` takes `CaipAccountId.IdentityKey`; the subject is `namespace:address`. Both `VerifyAndAuthenticate` (has a `CaipAccountId`) and `RefreshSession` (will have a `WalletIdentity`) reach `IdentityKey` via the same accessor — `.identityKey()` — and produce a byte-identical subject string from `toJwtSubject()`. No fabrication, no extra column, no caller knows the format.
+
+**Why `toJwtSubject()` lives on `CaipAccountId.IdentityKey`:**
+
+`IdentityKey` is `record IdentityKey(Namespace namespace, String address)` — it already holds exactly the two components that make up the identity subject. Both `CaipAccountId` and `WalletIdentity` expose `identityKey()` returning `CaipAccountId.IdentityKey`, making it the lowest common denominator across both use-case callers. A method on `CaipAccountId` itself would be inaccessible from the `WalletIdentity`→`IdentityKey` path without reconstructing a full `CaipAccountId` (which would require fabricating a reference). Putting the format definition on `IdentityKey` means the two future callers share the same path to the same string without any coupling between them.
+
+**What `JwtAuthenticationFilter` and `MeController` don't care about:**
+
+The filter reads `claims.getSubject()` and stores it as the principal — an opaque string. It never calls `CaipAccountId.parse()` and never splits on `:`. `MeController` echoes the principal back as-is. Neither needed a code change; the principal string and the `/me` response body are now `eip155:0x…` instead of `eip155:1:0x…`, which is what they should have been from the start.
+
+**Learned:** A wrong sub format can exist in production code for a full milestone and produce no test failures, because the only caller that mints the sub also has the data to mint it incorrectly and consistently. The bug only surfaces when a second caller (with less data) needs to produce the same value. That is the canonical sign that a value is not stored/computed at the right level of abstraction — the first caller had to carry extra data (chainId) that wasn't part of the answer. The test `issue_subIsCAIP10String` should have been suspicious the moment it was named: the sub is not a CAIP-10 string, because CAIP-10 includes chainId.
+
+**Open / next:** 4b-i — `RefreshSession` use case and `POST /v1/auth/refresh`. The foundation is now in place: `walletIdentity.identityKey().toJwtSubject()` produces a subject byte-identical to what `/verify` produces for the same wallet.
+
+---
+
 ## M2 · step 4a — Refresh token storage layer   (commit <hash>)
 
 **What:** Sixteen files created or modified across three layers (14 new, 2 modified — application.yml and this journal entry).
