@@ -139,7 +139,8 @@ class JpaRefreshTokenStoreTest {
         // reads replaced_by != NULL, classifies as reuse, and revokes the family.
         assertThatThrownBy(() -> store.rotate(first.rawToken()))
                 .isInstanceOf(RefreshTokenException.class)
-                .hasMessageContaining("reuse");
+                .satisfies(ex -> assertThat(((RefreshTokenException) ex).reason())
+                        .isEqualTo(RefreshTokenException.Reason.REUSE_DETECTED));
 
         // The entire family must be revoked (the REQUIRES_NEW revocation committed)
         refreshTokenRepository.findAll().stream()
@@ -157,7 +158,9 @@ class JpaRefreshTokenStoreTest {
         store.revokeFamily(familyId);
 
         assertThatThrownBy(() -> store.rotate(grant.rawToken()))
-                .isInstanceOf(RefreshTokenException.class);
+                .isInstanceOf(RefreshTokenException.class)
+                .satisfies(ex -> assertThat(((RefreshTokenException) ex).reason())
+                        .isEqualTo(RefreshTokenException.Reason.FAMILY_REVOKED));
     }
 
     @Test
@@ -165,7 +168,8 @@ class JpaRefreshTokenStoreTest {
     void rotate_unknownToken_throws() {
         assertThatThrownBy(() -> store.rotate("totally-unknown-token"))
                 .isInstanceOf(RefreshTokenException.class)
-                .hasMessageContaining("not found");
+                .satisfies(ex -> assertThat(((RefreshTokenException) ex).reason())
+                        .isEqualTo(RefreshTokenException.Reason.NOT_FOUND));
     }
 
     @Test
@@ -178,6 +182,7 @@ class JpaRefreshTokenStoreTest {
 
         assertThatThrownBy(() -> store.rotate(grant.rawToken()))
                 .isInstanceOf(RefreshTokenException.class)
-                .hasMessageContaining("expired");
+                .satisfies(ex -> assertThat(((RefreshTokenException) ex).reason())
+                        .isEqualTo(RefreshTokenException.Reason.EXPIRED));
     }
 }
