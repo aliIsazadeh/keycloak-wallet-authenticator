@@ -68,6 +68,49 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
+## M2 · step 4b-iii — issue first refresh token on /verify   (commit 70ff632)
+
+**What:** Wired the 4a refresh-token machinery into the login path. Until now
+`/verify` minted only an access JWT; the durable `issue(identityId, familyId)`
+store method existed and was tested but nothing called it. `VerifyAndAuthenticate`
+gained `RefreshTokenStore` as a collaborator: it now captures the
+`WalletIdentity` from the upsert (previously discarded), and after minting the
+access token calls `refreshTokenStore.issue(identity.id(), UUID.randomUUID())`
+to start a fresh token family, returning the raw refresh token in `AuthResult`.
+`AuthResult` and `VerifyResponse` each gained a `refreshToken` field, so
+`/verify`'s response is now byte-identical in shape to `/refresh`'s
+(`token`, `refreshToken`, `expiresAt`). This closes the 4b block: a wallet logs
+in at `/verify` and receives a usable refresh token, which `/refresh` rotates
+and `/logout` revokes.
+
+**Why:** Two ordering points were deliberate. (1) `issue()` runs AFTER the
+identity upsert (step 6), so a refresh-token row is only ever written for a
+fully-successful login — every validation/signature failure throws before step
+6, leaving no orphan family. (2) A new `family_id` is minted per login with
+`UUID.randomUUID()` at the call site, matching the convention 4a's tests
+established; `/verify` STARTS a family, `/refresh` CONTINUES one by rotation.
+`expiresAt` stays the access-token expiry (`issuedAt + jwtService.ttl()`),
+computed identically to `/refresh` — the field means the same thing on both
+endpoints. The access JWT itself is unchanged: same `identityKey().toJwtSubject()`
+subject as before, so existing token verification is unaffected.
+
+**Learned:** Adding a collaborator to a use case ripples through its in-memory
+test fakes — `VerifyAndAuthenticateTest`'s helper gained the new store, and
+`VerifyControllerTest` (which constructs `AuthResult` directly) broke at compile
+until the new middle field was supplied. Both are forced consequences of the
+interface change, not optional; the controller test also gained a
+`$.refreshToken` wire assertion so the new field is verified on the response,
+not just made to compile. The refresh-issuance fake throws on rotate/revoke —
+those are never reached on the verify path, so throwing documents "not used
+here" rather than silently passing.
+
+**Open / next:** 4b block complete (refresh, logout, verify-wiring all on
+master). The full-`rotate()`-under-concurrency gap from the 4a entry still
+stands. Next milestone work is M3 (smart-contract wallets, EIP-1271/6492) per
+the roadmap — not yet scoped.
+
+---
+
 ## M2 · step 4b-ii — POST /v1/auth/logout   (commit 8d14fb1)
 
 **What:** Added the logout endpoint. New `revokeFamilyByToken(String)` on the
