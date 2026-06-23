@@ -255,6 +255,11 @@ class VerifyAndAuthenticateTest {
             return new WalletIdentity(UUID.randomUUID(), account.identityKey(), "active",
                     Instant.now(), Instant.now());
         }
+
+        @Override
+        public Optional<WalletIdentity> findById(UUID id) {
+            return Optional.empty();
+        }
     }
 
     static class InMemoryChallengeStore implements ChallengeStore {

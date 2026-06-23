@@ -94,20 +94,20 @@ public class JpaRefreshTokenStore implements RefreshTokenStore {
         Instant now = clock.instant();
 
         RefreshTokenEntity old = repository.findByTokenHash(hash)
-                .orElseThrow(() -> new RefreshTokenException("refresh token not found"));
+                .orElseThrow(() -> new RefreshTokenException(RefreshTokenException.Reason.NOT_FOUND, "refresh token not found"));
 
         if (old.getExpiresAt().isBefore(now)) {
-            throw new RefreshTokenException("refresh token expired");
+            throw new RefreshTokenException(RefreshTokenException.Reason.EXPIRED, "refresh token expired");
         }
         if (old.getRevokedAt() != null) {
-            throw new RefreshTokenException("refresh token family is revoked");
+            throw new RefreshTokenException(RefreshTokenException.Reason.FAMILY_REVOKED, "refresh token family is revoked");
         }
 
         // Reuse at read time: replaced_by already set means this transaction started
         // after a prior rotation committed. No overlap with the winner. Revoke and throw.
         if (old.getReplacedBy() != null) {
             familyRevoker.revokeFamily(old.getFamilyId());
-            throw new RefreshTokenException("refresh token reuse detected — family revoked");
+            throw new RefreshTokenException(RefreshTokenException.Reason.REUSE_DETECTED, "refresh token reuse detected — family revoked");
         }
 
         // Row is live. Mint a replacement in the same family.
@@ -130,7 +130,7 @@ public class JpaRefreshTokenStore implements RefreshTokenStore {
         // 0 rows is not reuse. Throw and let the transaction roll back (undoes the INSERT).
         int claimed = repository.claimForRotation(old.getId(), newId);
         if (claimed == 0) {
-            throw new RefreshTokenException("refresh token already rotated");
+            throw new RefreshTokenException(RefreshTokenException.Reason.RACE_LOST, "refresh token already rotated");
         }
 
         return new TokenGrant(newRaw, toModel(newEntity));

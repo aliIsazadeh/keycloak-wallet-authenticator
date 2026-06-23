@@ -1,6 +1,9 @@
 package com.w3auth.backend.api;
 
+import com.w3auth.backend.session.RefreshTokenException;
 import com.w3auth.backend.verification.VerificationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -12,6 +15,8 @@ import java.util.stream.Collectors;
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
@@ -37,5 +42,19 @@ class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     Map<String, String> handleVerification(VerificationException ex) {
         return Map.of("error", ex.getMessage());
+    }
+
+    // All RefreshTokenException causes produce a byte-identical 401 — no oracle distinguishes
+    // reuse from expiry or a missing token at the wire. Log level alone branches on reason:
+    // reuse is a theft signal (WARN); all other failures are routine (DEBUG).
+    @ExceptionHandler(RefreshTokenException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    Map<String, String> handleRefreshToken(RefreshTokenException ex) {
+        if (ex.reason() == RefreshTokenException.Reason.REUSE_DETECTED) {
+            log.warn("refresh token reuse detected — possible theft; family revoked");
+        } else {
+            log.debug("refresh token rejected: {}", ex.reason());
+        }
+        return Map.of("error", "invalid refresh token");
     }
 }

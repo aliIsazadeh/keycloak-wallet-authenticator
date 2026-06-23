@@ -4,6 +4,8 @@ import com.w3auth.backend.challenge.ChallengePolicy;
 import com.w3auth.backend.challenge.ChallengeStore;
 import com.w3auth.backend.identity.WalletIdentityStore;
 import com.w3auth.backend.session.JwtService;
+import com.w3auth.backend.session.RefreshTokenStore;
+import com.w3auth.backend.usecase.RefreshSession;
 import com.w3auth.backend.usecase.RequestChallenge;
 import com.w3auth.backend.usecase.VerifyAndAuthenticate;
 import com.w3auth.backend.verification.EthereumSignatureVerifier;
@@ -33,5 +35,12 @@ class UseCaseConfiguration {
             WalletIdentityStore identityStore,
             JwtService jwtService, Clock clock) {
         return new VerifyAndAuthenticate(store, policy, signatureVerifier, identityStore, jwtService, clock);
+    }
+
+    @Bean
+    RefreshSession refreshSession(RefreshTokenStore refreshTokenStore,
+                                  WalletIdentityStore walletIdentityStore,
+                                  JwtService jwtService, Clock clock) {
+        return new RefreshSession(refreshTokenStore, walletIdentityStore, jwtService, clock);
     }
 }

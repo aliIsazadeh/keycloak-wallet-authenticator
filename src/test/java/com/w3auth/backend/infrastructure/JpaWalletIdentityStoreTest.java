@@ -17,6 +17,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -93,5 +94,22 @@ class JpaWalletIdentityStoreTest {
         store.upsertOnLogin(POLYGON);
 
         assertThat(repository.count()).isEqualTo(1L);
+    }
+
+    // ── findById ──────────────────────────────────────────────────────────────
+
+    @Test
+    void findById_existingId_returnsIdentity() {
+        WalletIdentity upserted = store.upsertOnLogin(MAINNET);
+
+        WalletIdentity found = store.findById(upserted.id()).orElseThrow();
+
+        assertThat(found.id()).isEqualTo(upserted.id());
+        assertThat(found.identityKey()).isEqualTo(upserted.identityKey());
+    }
+
+    @Test
+    void findById_unknownId_returnsEmpty() {
+        assertThat(store.findById(UUID.randomUUID())).isEmpty();
     }
 }

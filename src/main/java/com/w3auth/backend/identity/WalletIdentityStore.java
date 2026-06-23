@@ -1,5 +1,8 @@
 package com.w3auth.backend.identity;
 
+import java.util.Optional;
+import java.util.UUID;
+
 /**
  * Port for persisting wallet identity. Implemented in {@code infrastructure}
  * by {@code JpaWalletIdentityStore}; kept here so core packages can depend on
@@ -15,4 +18,11 @@ public interface WalletIdentityStore {
      * @return the current row state after the upsert
      */
     WalletIdentity upsertOnLogin(CaipAccountId account);
+
+    /**
+     * Looks up a wallet identity by its primary key. Returns empty if no row
+     * has that id. Used by {@code RefreshSession} to resolve a rotated token's
+     * {@code identityId} back to the wallet identity.
+     */
+    Optional<WalletIdentity> findById(UUID id);
 }

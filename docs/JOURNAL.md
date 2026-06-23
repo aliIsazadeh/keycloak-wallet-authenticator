@@ -68,7 +68,51 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
-## M2 · prep (before 4b-i) — JWT subject from three-part CAIP-10 to identity-only   (commit <hash>)
+## M2 · step 4b-i — RefreshSession + POST /v1/auth/refresh   (commits d47a60f, e68a3ee, 1fcb242, a9c2414)
+
+**What:** Built the refresh endpoint in four stacked commits on one branch.
+(1) `d47a60f` — added a `Reason` enum (`NOT_FOUND`, `EXPIRED`, `FAMILY_REVOKED`,
+`REUSE_DETECTED`, `RACE_LOST`) to `RefreshTokenException` and attached a reason
+at all five `rotate()` throw sites; migrated 4a's three message-substring test
+assertions to assert on `reason()` instead. (2) `e68a3ee` — added
+`findById(UUID)` to the `WalletIdentityStore` port + JPA adapter (the repository
+already inherits `findById` from `JpaRepository`; the adapter just maps through
+the existing `toModel`). (3) `1fcb242` — `RefreshSession` use case: rotate the
+presented token, resolve the grant's `identityId` via `findById`, mint a fresh
+access JWT via `identityKey().toJwtSubject()` — byte-identical to what `/verify`
+mints for the same wallet — and return `RefreshResult(token, refreshToken,
+expiresAt)`. (4) `a9c2414` — `RefreshController` (`POST /v1/auth/refresh`, public,
+200), `RefreshRequest`/`RefreshResponse` DTOs, and the `GlobalExceptionHandler`
+mapping every `RefreshTokenException` to a byte-identical 401.
+
+**Why:** The load-bearing security rule is that no failure mode is
+distinguishable at the wire: reuse, expiry, unknown token, and race-loss all
+return the exact same 401 body (`{"error":"invalid refresh token"}`), never
+`ex.getMessage()`. The `Reason` enum exists so internal logging can still
+branch (reuse → WARN as a theft signal; everything else → DEBUG) without that
+distinction ever reaching the client. Rejected alternative: folding a
+missing/blank `refreshToken` into the same 401 — instead it returns 400 via
+`@NotBlank`, because a malformed request is a request-shape error, not a
+token-validity oracle (it cannot distinguish reuse from expiry, so it leaks
+nothing). The endpoint is public because the access token may be expired when
+`/refresh` is called, so it cannot sit behind the JWT filter.
+
+**Learned:** The message string was doing double duty in 4a — both the test's
+assertion target and the internal detail that must never reach the wire.
+Migrating the tests to `reason()` broke that coupling: message is now for logs,
+`reason()` for tests and log-routing, the wire is a constant. The byte-identical
+property is verified directly (two different exception causes, two captured
+response bodies, asserted equal), not assumed — the same discipline as the
+spec-derived SIWE test: prove the property, don't trust the mechanism.
+
+**Open / next:** 4b-ii (`/logout`) and 4b-iii (wire first-family-token issuance
+into `/verify`). Full `rotate()` under concurrency remains covered by reasoning
++ the atomic `claimForRotation` test, not an end-to-end concurrency test — the
+gap named in the 4a entry still stands.
+
+---
+
+## M2 · prep (before 4b-i) — JWT subject from three-part CAIP-10 to identity-only   (commit 45f93404)
 
 **What:** Five files changed, no new files, test count stays 105.
 

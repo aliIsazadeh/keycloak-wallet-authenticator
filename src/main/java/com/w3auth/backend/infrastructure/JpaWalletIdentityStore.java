@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Optional;
+import java.util.UUID;
 
 @Component
 public class JpaWalletIdentityStore implements WalletIdentityStore {
@@ -56,6 +58,11 @@ public class JpaWalletIdentityStore implements WalletIdentityStore {
                         "wallet_identity row missing after upsert for " + namespace + ":" + address));
 
         return toModel(entity);
+    }
+
+    @Override
+    public Optional<WalletIdentity> findById(UUID id) {
+        return repository.findById(id).map(JpaWalletIdentityStore::toModel);
     }
 
     static WalletIdentity toModel(WalletIdentityEntity entity) {
