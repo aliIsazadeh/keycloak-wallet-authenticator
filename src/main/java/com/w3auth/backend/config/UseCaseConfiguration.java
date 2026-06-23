@@ -34,8 +34,9 @@ class UseCaseConfiguration {
             ChallengeStore store, ChallengePolicy policy,
             SignatureVerifier signatureVerifier,
             WalletIdentityStore identityStore,
+            RefreshTokenStore refreshTokenStore,
             JwtService jwtService, Clock clock) {
-        return new VerifyAndAuthenticate(store, policy, signatureVerifier, identityStore, jwtService, clock);
+        return new VerifyAndAuthenticate(store, policy, signatureVerifier, identityStore, refreshTokenStore, jwtService, clock);
     }
 
     @Bean

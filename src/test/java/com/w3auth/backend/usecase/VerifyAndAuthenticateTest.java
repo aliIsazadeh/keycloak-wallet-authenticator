@@ -10,6 +10,9 @@ import com.w3auth.backend.identity.WalletIdentity;
 import com.w3auth.backend.identity.WalletIdentityStore;
 import com.w3auth.backend.session.JwtPolicy;
 import com.w3auth.backend.session.JwtService;
+import com.w3auth.backend.session.RefreshToken;
+import com.w3auth.backend.session.RefreshTokenStore;
+import com.w3auth.backend.session.TokenGrant;
 import com.w3auth.backend.verification.SignatureVerifier;
 import com.w3auth.backend.verification.VerificationException;
 import com.w3auth.backend.verification.VerifiedIdentity;
@@ -56,6 +59,7 @@ class VerifyAndAuthenticateTest {
 
     private final InMemoryChallengeStore store = new InMemoryChallengeStore();
     private final InMemoryWalletIdentityStore identityStore = new InMemoryWalletIdentityStore();
+    private final InMemoryRefreshTokenStore refreshTokenStore = new InMemoryRefreshTokenStore();
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -72,7 +76,7 @@ class VerifyAndAuthenticateTest {
     }
 
     private VerifyAndAuthenticate useCase(SignatureVerifier verifier) {
-        return new VerifyAndAuthenticate(store, POLICY, verifier, identityStore, JWT_SERVICE, FIXED_CLOCK);
+        return new VerifyAndAuthenticate(store, POLICY, verifier, identityStore, refreshTokenStore, JWT_SERVICE, FIXED_CLOCK);
     }
 
     /** Verifier stub that always returns the given address without inspecting the request. */
@@ -91,6 +95,7 @@ class VerifyAndAuthenticateTest {
                 .execute(SiweMessageFactory.create(c), "dummy-sig");
 
         assertThat(result.token()).isNotBlank();
+        assertThat(result.refreshToken()).isEqualTo(InMemoryRefreshTokenStore.STUB_RAW_TOKEN);
         assertThat(result.expiresAt()).isEqualTo(FIXED_NOW.plus(JWT_TTL));
     }
 
@@ -274,5 +279,22 @@ class VerifyAndAuthenticateTest {
         public Optional<Challenge> consume(String nonce) {
             return Optional.ofNullable(stored.remove(nonce));
         }
+    }
+
+    static class InMemoryRefreshTokenStore implements RefreshTokenStore {
+        static final String STUB_RAW_TOKEN = "stub-refresh-token";
+
+        @Override
+        public TokenGrant issue(UUID identityId, UUID familyId) {
+            RefreshToken snapshot = new RefreshToken(
+                    UUID.randomUUID(), familyId, identityId,
+                    "stub-hash", null,
+                    Instant.now().plusSeconds(2592000), null, Instant.now());
+            return new TokenGrant(STUB_RAW_TOKEN, snapshot);
+        }
+
+        @Override public TokenGrant rotate(String rawToken) { throw new UnsupportedOperationException(); }
+        @Override public void revokeFamily(UUID familyId) { throw new UnsupportedOperationException(); }
+        @Override public void revokeFamilyByToken(String rawToken) { throw new UnsupportedOperationException(); }
     }
 }

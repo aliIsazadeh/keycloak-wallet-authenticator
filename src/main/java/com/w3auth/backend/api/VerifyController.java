@@ -22,6 +22,6 @@ class VerifyController {
     @PostMapping("/verify")
     VerifyResponse verify(@Valid @RequestBody VerifyRequest request) throws VerificationException {
         AuthResult result = verifyAndAuthenticate.execute(request.message(), request.signature());
-        return new VerifyResponse(result.token(), result.expiresAt());
+        return new VerifyResponse(result.token(), result.refreshToken(), result.expiresAt());
     }
 }

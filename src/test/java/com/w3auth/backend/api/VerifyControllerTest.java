@@ -35,7 +35,7 @@ class VerifyControllerTest {
 
     private static final Instant EXPIRES_AT = Instant.parse("2026-06-20T12:10:00Z");
     private static final AuthResult STUB_RESULT =
-            new AuthResult("eyJhbGciOiJIUzI1NiJ9.stub.sig", EXPIRES_AT);
+            new AuthResult("eyJhbGciOiJIUzI1NiJ9.stub.sig", "stub-refresh-token", EXPIRES_AT);
 
     @BeforeEach
     void setUp() {
@@ -61,6 +61,7 @@ class VerifyControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").value(STUB_RESULT.token()))
+                .andExpect(jsonPath("$.refreshToken").value(STUB_RESULT.refreshToken()))
                 .andExpect(jsonPath("$.expiresAt").value("2026-06-20T12:10:00Z"));
     }
 
