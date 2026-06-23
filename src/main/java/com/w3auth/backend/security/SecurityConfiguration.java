@@ -19,7 +19,7 @@ public class SecurityConfiguration {
         return http
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/v1/auth/challenge", "/v1/auth/verify", "/v1/auth/refresh").permitAll()
+                        .requestMatchers("/v1/auth/challenge", "/v1/auth/verify", "/v1/auth/refresh", "/v1/auth/logout").permitAll()
                         .requestMatchers("/actuator/health/**").permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

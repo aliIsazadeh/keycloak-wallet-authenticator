@@ -5,6 +5,7 @@ import com.w3auth.backend.challenge.ChallengeStore;
 import com.w3auth.backend.identity.WalletIdentityStore;
 import com.w3auth.backend.session.JwtService;
 import com.w3auth.backend.session.RefreshTokenStore;
+import com.w3auth.backend.usecase.Logout;
 import com.w3auth.backend.usecase.RefreshSession;
 import com.w3auth.backend.usecase.RequestChallenge;
 import com.w3auth.backend.usecase.VerifyAndAuthenticate;
@@ -42,5 +43,10 @@ class UseCaseConfiguration {
                                   WalletIdentityStore walletIdentityStore,
                                   JwtService jwtService, Clock clock) {
         return new RefreshSession(refreshTokenStore, walletIdentityStore, jwtService, clock);
+    }
+
+    @Bean
+    Logout logout(RefreshTokenStore refreshTokenStore) {
+        return new Logout(refreshTokenStore);
     }
 }

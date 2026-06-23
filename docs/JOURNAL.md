@@ -68,6 +68,47 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
+## M2 · step 4b-ii — POST /v1/auth/logout   (commit 8d14fb1)
+
+**What:** Added the logout endpoint. New `revokeFamilyByToken(String)` on the
+`RefreshTokenStore` port + JPA adapter: hashes the raw token with the SAME
+`sha256Hex` helper `rotate()` uses, `findByTokenHash`, and on a hit calls the
+existing `revokeFamily(familyId)`; on a miss it does nothing. A `Logout` use
+case (plain Java, no Spring) that one-line-delegates to it. `LogoutController`
+(`POST /v1/auth/logout`, public, **204 No Content**, void), `LogoutRequest`
+(`@NotBlank refreshToken`). Security config adds `/v1/auth/logout` to the
+permitAll list. No `GlobalExceptionHandler` change — logout has no exception
+path.
+
+**Why:** Three settled decisions. (1) Public endpoint, refresh token in the
+body — not behind the JWT filter — because the access token may be expired
+when the user logs out; requiring a live access token would mean a user has
+to refresh just to log out. The refresh token already proves possession, and
+revoking the family is the whole operation. (2) Idempotent: an already-revoked
+family or an unknown/garbage token is a silent no-op, never an error —
+logout's job is "make this family revoked," and if it already is, the goal is
+met. (3) Every case returns 204 with no body: live family revoked, already
+revoked, and unknown token are indistinguishable at the wire. This keeps the
+same no-oracle property as `/refresh` — logout never signals whether a token
+was valid. Blank/missing field is the one 400 (request-shape via `@NotBlank`),
+which leaks nothing.
+
+**Learned:** The load-bearing risk was the hash. Logout only has the raw
+token, so it must hash IDENTICALLY to how the token was stored — otherwise
+`findByTokenHash` silently never matches and every logout becomes a no-op that
+returns 204 and revokes nothing: a security hole wearing a success code.
+Reusing the exact `sha256Hex` helper (not a second copy) is what makes it
+real. Verified on the live adapter: seed a family, rotate so it has two rows,
+revoke by token, assert EVERY row in the family has `revoked_at` set — proves
+family-wide revocation, not just the presented row. `@Transactional(NOT_SUPPORTED)`
+on those tests so the assertions see committed state, not transaction-masked.
+
+**Open / next:** 4b-iii — wire first-family-token issuance into `/verify`
+(the last 4b step). The full-`rotate()`-under-concurrency gap named in the 4a
+entry still stands, unchanged by logout.
+
+---
+
 ## M2 · step 4b-i — RefreshSession + POST /v1/auth/refresh   (commits d47a60f, e68a3ee, 1fcb242, a9c2414)
 
 **What:** Built the refresh endpoint in four stacked commits on one branch.

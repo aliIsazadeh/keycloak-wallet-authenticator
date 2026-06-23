@@ -135,6 +135,7 @@ class RefreshSessionTest {
         @Override public TokenGrant rotate(String rawToken) { return grant; }
         @Override public TokenGrant issue(UUID identityId, UUID familyId) { throw new UnsupportedOperationException(); }
         @Override public void revokeFamily(UUID familyId) { throw new UnsupportedOperationException(); }
+        @Override public void revokeFamilyByToken(String rawToken) { throw new UnsupportedOperationException(); }
     }
 
     static class ThrowingStore implements RefreshTokenStore {
@@ -145,6 +146,7 @@ class RefreshSessionTest {
         @Override public TokenGrant rotate(String rawToken) { throw ex; }
         @Override public TokenGrant issue(UUID identityId, UUID familyId) { throw new UnsupportedOperationException(); }
         @Override public void revokeFamily(UUID familyId) { throw new UnsupportedOperationException(); }
+        @Override public void revokeFamilyByToken(String rawToken) { throw new UnsupportedOperationException(); }
     }
 
     static class FixedIdentityStore implements WalletIdentityStore {

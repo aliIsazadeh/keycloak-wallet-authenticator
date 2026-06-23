@@ -185,4 +185,48 @@ class JpaRefreshTokenStoreTest {
                 .satisfies(ex -> assertThat(((RefreshTokenException) ex).reason())
                         .isEqualTo(RefreshTokenException.Reason.EXPIRED));
     }
+
+    // ── revokeFamilyByToken ───────────────────────────────────────────────────
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void revokeFamilyByToken_liveFamily_revokesAllRows() {
+        UUID familyId = UUID.randomUUID();
+        TokenGrant first = store.issue(identityId, familyId);
+        // Rotate once so the family has two rows (old + new).
+        TokenGrant second = store.rotate(first.rawToken());
+
+        store.revokeFamilyByToken(second.rawToken());
+
+        refreshTokenRepository.findAll().stream()
+                .filter(e -> e.getFamilyId().equals(familyId))
+                .forEach(e -> assertThat(e.getRevokedAt())
+                        .as("row %s in family should be revoked", e.getId())
+                        .isNotNull());
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void revokeFamilyByToken_alreadyRevoked_isNoOpStillFine() {
+        UUID familyId = UUID.randomUUID();
+        TokenGrant grant = store.issue(identityId, familyId);
+
+        store.revokeFamilyByToken(grant.rawToken());
+        // Second call must not throw and rows must still be revoked.
+        store.revokeFamilyByToken(grant.rawToken());
+
+        refreshTokenRepository.findAll().stream()
+                .filter(e -> e.getFamilyId().equals(familyId))
+                .forEach(e -> assertThat(e.getRevokedAt()).isNotNull());
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void revokeFamilyByToken_unknownToken_isSilentNoOp() {
+        long countBefore = refreshTokenRepository.count();
+
+        store.revokeFamilyByToken("totally-unknown-token");
+
+        assertThat(refreshTokenRepository.count()).isEqualTo(countBefore);
+    }
 }

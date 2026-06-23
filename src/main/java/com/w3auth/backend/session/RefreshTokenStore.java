@@ -41,4 +41,11 @@ public interface RefreshTokenStore {
      * Idempotent: already-revoked rows are unaffected.
      */
     void revokeFamily(UUID familyId);
+
+    /**
+     * Hashes {@code rawToken}, looks up its row, and revokes the whole family.
+     * Idempotent and silent: if the token is unknown or the family is already revoked,
+     * this is a no-op. Used by Logout — never signals token validity to the caller.
+     */
+    void revokeFamilyByToken(String rawToken);
 }

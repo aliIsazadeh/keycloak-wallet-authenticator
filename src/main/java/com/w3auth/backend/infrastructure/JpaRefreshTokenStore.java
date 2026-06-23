@@ -142,6 +142,14 @@ public class JpaRefreshTokenStore implements RefreshTokenStore {
         repository.revokeFamily(familyId, clock.instant());
     }
 
+    @Override
+    @Transactional
+    public void revokeFamilyByToken(String rawToken) {
+        String hash = sha256Hex(rawToken);
+        repository.findByTokenHash(hash).ifPresent(entity ->
+                repository.revokeFamily(entity.getFamilyId(), clock.instant()));
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private static String generateRaw() {
