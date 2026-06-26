@@ -68,6 +68,70 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
+## M3a · smart-contract wallet verification (EIP-1271)   (commits 65a7d91, eb8325d, bb81a0c)
+
+**What:** Added smart-contract wallet login (EIP-1271) in three commits.
+(1) `65a7d91` — a `ChainClient` port (verification, no web3j import) with
+`getCode` and `isValidErc1271Signature`, a `Web3jChainClient` adapter
+(infrastructure), and a self-verifying anvil Testcontainer harness proving
+all four parse outcomes (EOA empty code, contract non-empty code, magic
+return → true, non-magic return → false). (2) `eb8325d` —
+`ContractAwareSignatureVerifier`, the dispatcher that wraps the existing
+`EthereumSignatureVerifier` behind the same `SignatureVerifier` seam and
+routes each request; RPC URL behind `walletauth.chain.rpc-url`, the Web3j
+bean lazy so the app boots without a live node. (3) `bb81a0c` — a real
+end-to-end proof on anvil: a compiler-produced `OwnerValidator` contract
+(solc 0.8.34) that recovers via ecrecover and returns the magic value only
+for the owner, deployed and exercised through the REAL dispatcher and REAL
+`Web3jChainClient` — accept-valid, reject-forged, reject-tampered.
+
+**Why:** The dispatch order is the load-bearing decision. (1) Check the
+EIP-6492 magic suffix on the decoded signature FIRST — and in M3a, throw
+"not yet supported" (real unwrap is M3b). This MUST precede `getCode`,
+because a 6492 wrapper is a property of the SIGNATURE, not the address, and
+can sit on an already-deployed contract; routing by `getCode` first would
+mis-hand a wrapped signature to the plain 1271 path. (2) Then `getCode`:
+code present → EIP-1271 `isValidSignature`; empty → EOA `ecrecover`. The
+rejected alternative was "try ecrecover, fall back on mismatch" — structurally
+broken, because `ecrecover` always returns SOME address, so a contract wallet
+is indistinguishable from a wrong-signer EOA; only the chain can answer
+"account or contract." For a contract, the claimed address IS the identity:
+the 1271 path returns `VerifiedIdentity(claimedAddress)` only when the contract
+validated, so the caller's signer-equals-claim check passes by construction —
+the real gate is `isValidSignature` returning magic, so that branch must throw
+(never return an identity) on a false result, and a transport error must
+propagate, never be swallowed as false.
+
+**Learned:** Two fixtures, two jobs. Commit 1's stubs are CONSTANT-RETURN
+contracts (they ignore calldata) — they prove the ADAPTER calls a node and
+parses magic-vs-non-magic, nothing more. Commit 3's `OwnerValidator` is a
+REAL selector-dispatching, ecrecover-ing 1271 contract — it proves SIGNATURE
+VALIDATION end to end, which a constant-return stub structurally cannot (it
+would accept a forged signature). The non-negotiable test is reject-forged:
+a green accept-only suite proves "accepts valid," not "rejects fake," and
+fake-acceptance is the failure that matters. Hash discipline is what makes
+accept-valid meaningful: the test signs via `Sign.signPrefixedMessage` and
+the dispatcher hashes via `Sign.getEthereumMessageHash` — same EIP-191 prefix
++ Keccak, so the digest the contract's ecrecover sees is byte-identical to
+what the test signed; a mismatch would fail accept while passing reject.
+Anvil quirk for the record: foundry v1.1.0 silently IGNORES all CLI flags —
+the bind address must be set via `ANVIL_IP_ADDR=0.0.0.0`, and readiness needs
+a real RPC probe (the port opens before the HTTP layer serves). Contract
+bytecode was compiled offline and supplied (not generated here), then proven
+byte-identical and behaviorally correct on-chain — a hand-generated fixture
+could fail OPEN.
+
+**Open / next:** M3b — EIP-6492 (counterfactual / not-yet-deployed contract
+wallets): replace the M3a suffix-stub with real unwrap-and-deploy-then-1271.
+Forward hook recorded for EIP-7702 (delegated EOAs): the SAME anvil harness
+tests it later via `--hardfork prague`, where `getCode` returns the
+`0xef0100…` delegation indicator — no node swap, no second integration
+strategy. The verification module split (ARCHITECTURE §3, triggered by the
+web3j RPC dependency) is now justified but deferred — landed M3a single-module;
+split is its own future change when it earns its keep.
+
+---
+
 ## M2 · step 4b-iii — issue first refresh token on /verify   (commit 70ff632)
 
 **What:** Wired the 4a refresh-token machinery into the login path. Until now
