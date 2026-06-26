@@ -7,7 +7,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import com.w3auth.backend.verification.ChainClient;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -73,6 +75,12 @@ class VerifyFlowE2ETest {
     // Matches application.yml local-dev default: Base64("abcdefghijklmnopqrstuvwxyz123456")
     private static final SecretKey SIGNING_KEY =
             Keys.hmacShaKeyFor(Base64.getDecoder().decode("YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="));
+
+    // The dispatcher calls chainClient.getCode before ecrecover. The E2E tests exercise
+    // EOA verification only; mock ChainClient returns null (treated as "no code" → EOA path)
+    // so no live RPC endpoint is needed.
+    @MockitoBean
+    ChainClient chainClient;
 
     @Autowired
     WebApplicationContext wac;

@@ -9,6 +9,8 @@ import com.w3auth.backend.usecase.Logout;
 import com.w3auth.backend.usecase.RefreshSession;
 import com.w3auth.backend.usecase.RequestChallenge;
 import com.w3auth.backend.usecase.VerifyAndAuthenticate;
+import com.w3auth.backend.verification.ChainClient;
+import com.w3auth.backend.verification.ContractAwareSignatureVerifier;
 import com.w3auth.backend.verification.EthereumSignatureVerifier;
 import com.w3auth.backend.verification.SignatureVerifier;
 import org.springframework.context.annotation.Bean;
@@ -25,8 +27,8 @@ class UseCaseConfiguration {
     }
 
     @Bean
-    SignatureVerifier signatureVerifier() {
-        return new EthereumSignatureVerifier();
+    SignatureVerifier signatureVerifier(ChainClient chainClient) {
+        return new ContractAwareSignatureVerifier(new EthereumSignatureVerifier(), chainClient);
     }
 
     @Bean
