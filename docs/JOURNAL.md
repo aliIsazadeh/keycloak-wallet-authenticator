@@ -69,7 +69,7 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
-## docs · reconcile CLAUDE.md + ARCHITECTURE.md to shipped M1–M3b state   (commit to follow on docs-refresh-m3)
+## docs · reconcile CLAUDE.md + ARCHITECTURE.md to shipped M1–M3b state   (commit 52412f6)
 
 **What:** Three files changed; no production or test code touched. `CLAUDE.md`: added web3j to the tech-stack list; moved EIP-1271/6492 from "OUT of scope" to "IN scope (shipped)"; expanded the package-layout block with the real M3 class names (`ContractAwareSignatureVerifier`, `ChainClient`, `Eip6492Envelope`, `Web3jChainClient`); updated the rule-of-three note to record that the real second implementation (`ContractAwareSignatureVerifier`) arrived at M3; added a "Project skills" section pointing to `.claude/skills/` and establishing the drift rule (skill + repo beat this doc when they conflict). `docs/ARCHITECTURE.md`: §3 module-split note updated to record that web3j landed single-module and the split remains deferred; §7 subsection "Known V1 limitation: EOA only" rewritten as "Smart-contract wallet support (M3, shipped)" covering the dispatch order, `ChainClient` port, `Web3jChainClient`, EIP-1271 path, EIP-6492 deployless-eth_call path, and `Eip6492Envelope` gate; §8 updated to name both concrete implementations and state the rule-of-three outcome; §9 build-order bullets rewritten with ✅ on M0–M3b and M4 marked unscoped. `docs/JOURNAL.md`: Part 1 package map refreshed to reflect M3 additions to `verification` and `infrastructure`; milestone statuses corrected (M3 split into M3a/M3b, both ✅); roadmap table rows rewritten accordingly.
 
