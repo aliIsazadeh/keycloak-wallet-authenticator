@@ -12,10 +12,11 @@ import java.nio.charset.StandardCharsets;
  * <p>Dispatch order — applied in this exact sequence:
  * <ol>
  *   <li><b>EIP-6492 suffix check</b> — if the last 32 bytes of the decoded signature equal
- *       the magic trailer {@code 0x6492...6492}, throw immediately. This is a stub in M3a;
- *       real EIP-6492 unwrapping is M3b. The check <em>must</em> precede {@code getCode}
- *       because a 6492-wrapped signature can target an address that already has code; routing
- *       by code first would misroute the deployed-but-still-wrapped case.
+ *       the magic trailer {@code 0x6492...6492}, validate the envelope structure (via
+ *       {@link Eip6492Envelope#validateStructure}) then delegate to
+ *       {@link ChainClient#isValidSignatureDeployless}. The check <em>must</em> precede
+ *       {@code getCode} because a 6492-wrapped signature can target an address that already
+ *       has code; routing by code first would misroute the deployed-but-still-wrapped case.
  *   <li><b>eth_getCode</b> on the claimed address — empty result → EOA; non-empty → contract.
  *   <li><b>EOA path</b> — full delegation to {@code eoaVerifier} (ecrecover).
  *       The caller's step-5 signer-equals-claim check still guards this path.
@@ -52,7 +53,29 @@ public class ContractAwareSignatureVerifier implements SignatureVerifier {
 
         // Step b: EIP-6492 suffix check — must precede getCode (see class Javadoc).
         if (hasEip6492Suffix(sigBytes)) {
-            throw new VerificationException("EIP-6492 signatures not yet supported");
+            // Well-formedness gate: validate ABI structure before touching the chain.
+            // Throws VerificationException on malformed input; the chain is never called.
+            Eip6492Envelope.validateStructure(sigBytes);
+
+            // Same EIP-191 hash used on all other paths — the universal validator on-chain
+            // applies the same ecrecover internally.
+            byte[] hash6492 = Sign.getEthereumMessageHash(
+                    request.rawMessage().getBytes(StandardCharsets.UTF_8));
+            String signer = request.message().address();
+
+            boolean ok6492;
+            try {
+                ok6492 = chainClient.isValidSignatureDeployless(signer, hash6492, sigBytes);
+            } catch (RuntimeException e) {
+                throw new VerificationException(
+                        "ChainClient transport error during EIP-6492 validation: "
+                        + e.getMessage(), e);
+            }
+            if (!ok6492) {
+                throw new VerificationException("EIP-6492 validation failed");
+            }
+            // Contract-wallet identity = the claimed address; same convention as EIP-1271.
+            return new VerifiedIdentity(signer);
         }
 
         // Step c: determine whether the claimed address holds deployed code.
@@ -63,9 +86,8 @@ public class ContractAwareSignatureVerifier implements SignatureVerifier {
         }
 
         // Step e: EIP-1271 contract path.
-        // This hash is byte-identical to what the EOA path signs over (Sign.signedPrefixedMessageToKey
-        // applies the same EIP-191 prefix internally). Correctness vs a real on-chain
-        // isValidSignature contract is proven in Commit 3, not here.
+        // This hash is byte-identical to what the EOA path signs over — Sign.signedPrefixedMessageToKey
+        // applies the same EIP-191 prefix internally.
         byte[] hash = Sign.getEthereumMessageHash(
                 request.rawMessage().getBytes(StandardCharsets.UTF_8));
 

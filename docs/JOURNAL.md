@@ -68,6 +68,65 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
+## M3b · EIP-6492 envelope decode + dispatch routing   (commits 207709e, 4d2cbb6)
+
+**What:** Two commits, one feature unit. (1) `207709e` — `ChainClient` gained
+`isValidSignatureDeployless(String signer, byte[] hash, byte[] signature)`, the
+same three-outcome port contract as `isValidErc1271Signature` (magic → true,
+non-magic / revert → false, transport → throw). New `Eip6492Envelope` class
+in `verification` (pure Java, no web3j, no Spring): decodes the
+`abi.encode(address factory, bytes factoryCalldata, bytes innerSig)` body of
+a 6492 envelope and validates both dynamic-field offsets and length words
+against the body bounds — a well-formedness GATE, not an unwrapper; decoded
+parts are discarded. The dispatcher's 6492 branch now runs
+`Eip6492Envelope.validateStructure` (throws on malformed, chain never called),
+then calls `chainClient.isValidSignatureDeployless(claimedAddress, hash, fullWrappedSig)`:
+true → `VerifiedIdentity(claimedAddress)`, false → throw, transport → throw.
+`Web3jChainClient.isValidSignatureDeployless` is a DELIBERATE STUB — throws
+`UnsupportedOperationException("EIP-6492 deployless validation: M3b adapter,
+next commit")` pending Artifact A in the next branch increment. (2) `4d2cbb6` —
+two additional overrun-rejection tests: bad-offset (head offset word > bodyLen)
+and length-overrun (declared field length overruns tail), both vectors derived
+by mutating VALID_6492_SIG, both with deployless=true so a missing bounds check
+surfaces as wrong-accept, not a silent pass.
+
+**Why:** Decision 1 — canonical universal validator via deployless eth\_call:
+the ERC-6492 reference universal-verifier contract, given factory + calldata +
+innerSig, deploys the wallet counterfactually in a revert frame, calls
+`isValidSignature`, and returns magic or non-magic. The backend passes the WHOLE
+wrapped sig over the port; the validator unwraps internally. This avoids
+rebuilding EVM execution logic in Java, and means the adapter is a single
+`eth_call` to a known contract address. Decision 2 — 6492-branch-only: M3a's
+EOA and deployed-1271 paths are untouched; the 6492 branch is a perpendicular
+vertical slice. Decision 3 — detect + decode lives in `verification`, pure: the
+ABI-decode is a well-formedness gate in the same package as the dispatcher, so a
+malformed envelope can never reach infrastructure. Gate design: decoded components
+(factory, calldata, innerSig) are DISCARDED — structural validity is the only
+output. Forwarding only the innerSig to the port would be wrong; the validator
+contract needs the full envelope to perform the counterfactual deploy.
+
+**Learned:** "Body too short" (< 96 bytes) is the easy bounds check; the
+load-bearing rejections are bad offset (head offset word points past the body)
+and length overrun (declared bytes length puts the tail past the body end).
+Commit 1 only covered too-short; those two overrun cases were the gap — logged
+as a Commit 2 follow-on before merge. Test configuration discipline: `deployless=true`
+in `FakeChainClient` means a fail-open bounds check surfaces as wrong-ACCEPT
+(test fails because the method returns an identity instead of throwing), not a
+silent pass — if it were false, a fail-open would look like a rejection and the
+test would pass. Also noted: the decoder does NOT validate bytes above the low
+20 in the factory address word (the ABI spec permits non-zero high bytes from a
+malformed encoder); this is acceptable for a well-formedness gate since the
+on-chain validator handles it — logged here, not fixed.
+
+**Open / next:** `Web3jChainClient.isValidSignatureDeployless` is a deliberate
+stub blocked on Artifact A — the `UniversalSigValidator` constructor-runnable
+creation bytecode, which the human supplies and verifies; Claude Code must not
+generate or modify it. The Anvil counterfactual fixture (Artifact B: a
+not-yet-deployed wallet exercising the full 6492 path end-to-end) follows
+Artifact A.
+
+---
+
 ## M3a · smart-contract wallet verification (EIP-1271)   (commits 65a7d91, eb8325d, bb81a0c)
 
 **What:** Added smart-contract wallet login (EIP-1271) in three commits.

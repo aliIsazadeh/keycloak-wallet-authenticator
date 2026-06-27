@@ -13,6 +13,10 @@ package com.w3auth.backend.verification;
  *   <li>The node was unreachable or returned an unexpected RPC error → throw
  *       {@link RuntimeException} (transport failure must not look like authenticated-no)</li>
  * </ul>
+ *
+ * <p>Implementations must satisfy the same three-outcome contract for
+ * {@link #isValidSignatureDeployless}: magic returned → {@code true};
+ * non-magic or revert → {@code false}; transport/RPC error → throw.
  */
 public interface ChainClient {
 
@@ -37,4 +41,23 @@ public interface ChainClient {
      * @throws RuntimeException on transport or RPC error
      */
     boolean isValidErc1271Signature(String contractAddress, byte[] hash, byte[] signature);
+
+    /**
+     * Validates an EIP-6492-wrapped signature using a deployless universal verifier.
+     * The full wrapped signature (including the 32-byte EIP-6492 magic suffix) is passed;
+     * the implementation is responsible for executing the factory call and validating the
+     * inner signature without requiring the contract wallet to be pre-deployed.
+     *
+     * <p>Same three-outcome contract as {@link #isValidErc1271Signature}:
+     * magic returned → {@code true}; non-magic or revert → {@code false};
+     * transport/RPC error → throw {@link RuntimeException}.
+     *
+     * @param signer    claimed contract wallet address (canonical lowercase hex, same convention
+     *                  as {@link #isValidErc1271Signature})
+     * @param hash      32-byte EIP-191 message digest (same value computed by the dispatcher
+     *                  via {@code Sign.getEthereumMessageHash})
+     * @param signature the full EIP-6492-wrapped signature bytes (body + 32-byte magic suffix)
+     * @throws RuntimeException on transport or RPC error
+     */
+    boolean isValidSignatureDeployless(String signer, byte[] hash, byte[] signature);
 }

@@ -48,6 +48,16 @@ public class Web3jChainClient implements ChainClient {
         }
     }
 
+    /**
+     * M3b stub — replace this method with the deployless eth_call adapter next commit.
+     * The bytecode artifact required to make the eth_call is supplied in the next step.
+     */
+    @Override
+    public boolean isValidSignatureDeployless(String signer, byte[] hash, byte[] signature) {
+        throw new UnsupportedOperationException(
+                "EIP-6492 deployless validation: M3b adapter, next commit");
+    }
+
     // ABI encoding of isValidSignature(bytes32 hash, bytes memory signature):
     //   selector (4 bytes)  : 1626ba7e
     //   arg1 (bytes32)      : hash, 32 bytes (static)
