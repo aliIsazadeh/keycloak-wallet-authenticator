@@ -75,3 +75,12 @@ Bytecode and signature test vectors for EIP-1271 / EIP-6492 work are supplied
 and verified **externally**, never generated to match the decoder under test.
 Prove behaviour with accept-valid + reject-forged + reject-tampered, not byte
 comparison alone.
+
+For a deployless validator exercised via `eth_call` with `to=null` (contract-creation
+mode), the single-byte accept return is the behavioural proof — it simultaneously
+implies correct CREATE2 address derivation, the factory deployed to that exact
+address, and EIP-1271 inner validation passed. Do not assert `eth_getCode` is
+non-empty after the call: a deployless `eth_call` does not persist the deploy, so
+post-call code is empty by design. Counterfactual wallet addresses must be computed
+in-test (keccak256 chain), never hardcoded — a hardcoded address hides a derivation
+bug behind a green test.
