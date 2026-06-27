@@ -13,6 +13,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.time.Duration;
 import org.web3j.crypto.Credentials;
+import org.web3j.crypto.ECKeyPair;
+import org.web3j.crypto.Sign;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.Transaction;
@@ -21,6 +23,7 @@ import org.web3j.tx.RawTransactionManager;
 import org.web3j.tx.gas.DefaultGasProvider;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -57,6 +60,9 @@ class Web3jChainClientIntegrationTest {
     // Anvil dev account #1 — used as a bare EOA (no deployed code)
     private static final String DEV_ACCOUNT_1 =
             "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+    // Anvil dev account #1 private key — used to forge signatures in deployless tests
+    private static final String DEV_PRIVATE_KEY_1 =
+            "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
     private static final long ANVIL_CHAIN_ID = 31337L;
 
     // Expected runtime bytecode (41 bytes each) — the portion CODECOPY deploys.
@@ -226,6 +232,45 @@ class Web3jChainClientIntegrationTest {
                         "0x1626ba7e00000000000000000000000000000000000000000000000000000000");
     }
 
+    // TODO(commit 2): counterfactual wrapped-sig test via Artifact B (CREATE2 factory fixture)
+
+    @Test
+    void deployless_validEoaSignature_returnsTrue() {
+        byte[] message = "hello deployless".getBytes(StandardCharsets.UTF_8);
+        byte[] hash = Sign.getEthereumMessageHash(message);
+        ECKeyPair keyPair = Credentials.create(DEV_PRIVATE_KEY).getEcKeyPair();
+        Sign.SignatureData sigData = Sign.signPrefixedMessage(message, keyPair);
+        byte[] sig = toEthSig(sigData);
+        String signer = Credentials.create(DEV_PRIVATE_KEY).getAddress().toLowerCase();
+        assertThat(chainClient.isValidSignatureDeployless(signer, hash, sig)).isTrue();
+    }
+
+    @Test
+    void deployless_forgedSignature_returnsFalse() {
+        byte[] message = "hello deployless".getBytes(StandardCharsets.UTF_8);
+        byte[] hash = Sign.getEthereumMessageHash(message);
+        // Sign with a different key but claim signer is account #0 — validator must reject.
+        ECKeyPair wrongKey = Credentials.create(DEV_PRIVATE_KEY_1).getEcKeyPair();
+        Sign.SignatureData sigData = Sign.signPrefixedMessage(message, wrongKey);
+        byte[] sig = toEthSig(sigData);
+        String signer = Credentials.create(DEV_PRIVATE_KEY).getAddress().toLowerCase();
+        assertThat(chainClient.isValidSignatureDeployless(signer, hash, sig)).isFalse();
+    }
+
+    @Test
+    void deployless_tamperedHash_returnsFalse() {
+        byte[] message = "hello deployless".getBytes(StandardCharsets.UTF_8);
+        byte[] hash = Sign.getEthereumMessageHash(message);
+        ECKeyPair keyPair = Credentials.create(DEV_PRIVATE_KEY).getEcKeyPair();
+        Sign.SignatureData sigData = Sign.signPrefixedMessage(message, keyPair);
+        byte[] sig = toEthSig(sigData);
+        String signer = Credentials.create(DEV_PRIVATE_KEY).getAddress().toLowerCase();
+        // Sig is valid for `hash` but not for `tamperedHash`; validator must return 0x00.
+        byte[] tamperedHash = hash.clone();
+        tamperedHash[0] ^= (byte) 0xFF;
+        assertThat(chainClient.isValidSignatureDeployless(signer, tamperedHash, sig)).isFalse();
+    }
+
     @Test
     void rawEthCall_rejectFixture_returnsNonMagicWord() throws Exception {
         var tx = Transaction.createEthCallTransaction(null, neverValidAddress, "0x");
@@ -237,5 +282,13 @@ class Web3jChainClientIntegrationTest {
                         "0xdeadbeef00000000000000000000000000000000000000000000000000000000");
         assertThat(value.toLowerCase())
                 .doesNotStartWith("0x1626ba7e");
+    }
+
+    private static byte[] toEthSig(Sign.SignatureData sigData) {
+        byte[] sig = new byte[65];
+        System.arraycopy(sigData.getR(), 0, sig, 0, 32);
+        System.arraycopy(sigData.getS(), 0, sig, 32, 32);
+        sig[64] = sigData.getV()[0];
+        return sig;
     }
 }
