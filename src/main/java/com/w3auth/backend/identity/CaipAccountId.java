@@ -1,7 +1,6 @@
 package com.w3auth.backend.identity;
 
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 /**
  * A CAIP-10 account id: {@code namespace:reference:address}
@@ -9,9 +8,8 @@ import java.util.regex.Pattern;
  *
  * <p>Construction is the only way to obtain an instance, and construction
  * always validates and canonicalizes — an invalid or non-canonical
- * {@code CaipAccountId} cannot exist. For {@link Namespace#EIP155}, the
- * address is lowercased so that the two EIP-55 case variants of the same
- * address produce equal {@code CaipAccountId}s.
+ * {@code CaipAccountId} cannot exist. Canonicalization is namespace-specific:
+ * EIP-155 lowercases the address; Solana preserves the base58 casing.
  *
  * <p>The {@code reference} (chain id) is part of the CAIP-10 string and thus
  * part of this value's equality, but per the architecture it is
@@ -19,9 +17,6 @@ import java.util.regex.Pattern;
  * {@link #identityKey()}.
  */
 public final class CaipAccountId {
-
-    private static final Pattern EVM_ADDRESS = Pattern.compile("^0x[0-9a-fA-F]{40}$");
-    private static final Pattern DECIMAL_REFERENCE = Pattern.compile("^[0-9]+$");
 
     private final Namespace namespace;
     private final String reference;
@@ -61,13 +56,9 @@ public final class CaipAccountId {
      */
     public static CaipAccountId of(Namespace namespace, String reference, String address) {
         Objects.requireNonNull(namespace, "namespace must not be null");
-        if (reference == null || !DECIMAL_REFERENCE.matcher(reference).matches()) {
-            throw new IllegalArgumentException("Invalid chain reference for " + namespace + ": " + reference);
-        }
-        if (address == null || !EVM_ADDRESS.matcher(address).matches()) {
-            throw new IllegalArgumentException("Invalid " + namespace + " address: " + address);
-        }
-        return new CaipAccountId(namespace, reference, address.toLowerCase());
+        String validatedReference = namespace.validateReference(reference);
+        String canonicalAddress = namespace.validateAddress(address);
+        return new CaipAccountId(namespace, validatedReference, canonicalAddress);
     }
 
     public Namespace namespace() {

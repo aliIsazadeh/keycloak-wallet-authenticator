@@ -14,8 +14,19 @@ class NamespaceTest {
 
     @Test
     void rejectsUnknownNamespace() {
-        assertThatThrownBy(() -> Namespace.fromString("solana"))
+        // "solana" is now a known namespace (M4); use a genuinely unknown one.
+        assertThatThrownBy(() -> Namespace.fromString("cosmos"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void parsesKnownSolanaNamespace() {
+        assertThat(Namespace.fromString("solana")).isEqualTo(Namespace.SOLANA);
+    }
+
+    @Test
+    void solanaToStringReturnsCanonicalValue() {
+        assertThat(Namespace.SOLANA).hasToString("solana");
     }
 
     @Test
