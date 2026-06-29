@@ -69,6 +69,30 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
+## M4 · piece 2 — SIWS message parser   (commit da9de5b)
+
+**What:** Added `SiwsMessage` (immutable record, `verification` package) and `SiwsMessageParser` (strict static parser, `verification` package), plus `SiwsMessageParserTest` — 14 tests, all passing. No factory, no genesis constants, no Spring/Jackson/web3j imports; both production files are pure Java 21.
+
+`SiwsMessage` mirrors `SiweMessage` exactly: same eight fields (`domain`, `address`, `uri`, `version`, `chainId`, `nonce`, `issuedAt`, `expiresAt`), same compact-constructor null/blank guards, same deliberate no-canonicalization policy — wire values only.
+
+`SiwsMessageParser` mirrors `SiweMessageParser`'s strict, fail-closed shape. Three differences from SIWE: (1) first-line suffix is `" wants you to sign in with your Solana account:"` — the namespace discriminator; (2) the address line is a bare base58 Solana pubkey — format-only, not validated here; (3) `Chain ID:` must be exactly one of `{mainnet, devnet, testnet}` — checked via `Set.of` lookup, all other values (numeric `"1"`, prefixed `"solana:mainnet"`, `"localnet"`, empty) rejected with `IllegalArgumentException`. Cluster string stored verbatim in `SiwsMessage.chainId()`.
+
+`SiwsMessageParserTest` uses the spec-derived canonical message directly as a string literal — not produced by any factory, because no SIWS factory exists yet. Tests cover: full canonical parse with field-by-field assertions; sub-second instant round-trip; devnet and testnet accepted (parameterized); chainId `"1"`, `"solana:mainnet"`, and `"localnet"` rejected; Ethereum-suffix first line rejected; too-few-lines (truncated); too-many-lines (wallet-built extras: `Not Before / Request ID / Resources`); non-blank "blank" line; missing `URI:` prefix; garbage timestamp on `Issued At:`; null input.
+
+ArchUnit `LayerBoundaryTest` still passes (1 test, 0 failures) — confirmed `SiwsMessage` and `SiwsMessageParser` carry no Spring, JPA, Redis, or infrastructure imports.
+
+**Why:** The SIWS parsing layer is the entry gate for M4's Solana auth path, parallel to the SIWE parser that guards M1–M3. Having the parser ship before the factory means piece 4 (factory + genesis table) can write its canonical-message string once, in the factory, and immediately verify round-trip correctness against a parser that is already tested in isolation.
+
+Rejected alternative — *parser maps cluster→genesis hash (option B)*: mapping `"mainnet"` → `"5eykt4..."` inside the parser would conflate format parsing with semantic routing. `SiweMessageParser` stores `chainId` as the raw decimal string it finds on the wire; `SiwsMessageParser` should store the raw cluster name for the same reason. The genesis constants and the cluster→genesis table are piece 4's job, where the factory and the routing logic need them. Keeping the parser wire-value-only means it stays free of the genesis artifact entirely, which is what lets piece 2 ship with no supplied constants.
+
+Rejected alternative — *factory + parser in one piece (original 2a/2b split)*: the earlier plan split piece 2 into "2a factory" and "2b parser." The factory's correctness depends on genesis-hash constants (the genesis hash is embedded in every SIWS message via the chain reference). Those constants are piece 4's artifact. Merging factory into piece 2 would have blocked on piece 4's work or forced placeholders. The corrected cut: piece 2 = parser only (zero artifacts), piece 4 = factory + genesis table + routing.
+
+**Learned:** A format parser that does semantic translation is doing policy's job. "What cluster name appears on the wire" is a format question; "what genesis hash does that cluster name correspond to" is a routing question. Keeping those two questions in different classes is what let piece 2 ship as a self-contained, artifact-free unit. The parser-only cut also makes the test non-circular: the canonical test message is a hand-written spec literal, not round-tripped through any factory, so the test proves the parser against the spec rather than against itself.
+
+**Open / next:** Piece 4 adds `SiwsMessageFactory` + the cluster↔genesis hash table + the three confirmed Solana genesis constants (`mainnet`, `devnet`, `testnet`) + namespace routing in `VerifyAndAuthenticate`. Also deferred: a `STRICT` parser variant that accepts optional wallet-built fields (`Not Before`, `Request ID`, `Resources`) — only if and when that case becomes real; the current parser's strict 10-line layout is the correct default.
+
+---
+
 ## M4 · piece 1.5 — ArchUnit layer-boundary guard   (commit 0ff42ea)
 
 **What:** Added `com.tngtech.archunit:archunit-junit5:1.4.2` as a `testImplementation` dependency in `build.gradle.kts` (code commit 46d8bce). Created `LayerBoundaryTest` at `src/test/java/com/w3auth/backend/` — one `@Test` method `corePackagesMustNotImportFrameworkOrInfrastructure()`. The rule uses `noClasses().that().resideInAnyPackage(core).should().dependOnClassesThat().resideInAnyPackage(forbidden)` where `core = {identity.., challenge.., verification.., session.., usecase..}` and `forbidden = {org.springframework.., jakarta.persistence.., org.hibernate.., io.lettuce.., com.w3auth.backend.infrastructure..}`. An explicit `if (classes.isEmpty()) throw AssertionError(...)` guard precedes the rule so a vacuous pass on an empty classpath fails rather than silently greens. The `ClassFileImporter` imported 73 production classes — not vacuous. Suite: 165 → 166.
