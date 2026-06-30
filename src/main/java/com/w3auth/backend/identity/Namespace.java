@@ -43,21 +43,7 @@ public enum Namespace {
 
         @Override
         public String validateAddress(String address) {
-            if (address == null) {
-                throw new IllegalArgumentException("Invalid " + this + " address: null");
-            }
-            byte[] decoded;
-            try {
-                decoded = Base58.decode(address);
-            } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException(
-                        "Invalid " + this + " address (not valid base58): " + address, e);
-            }
-            if (decoded.length != 32) {
-                throw new IllegalArgumentException(
-                        "Invalid " + this + " address (decoded to "
-                                + decoded.length + " bytes, expected 32): " + address);
-            }
+            SolanaPublicKey.decode(address);  // validates: non-null, valid base58, exactly 32 bytes
             // Base58 is case-sensitive; return as-is — do NOT lowercase.
             return address;
         }

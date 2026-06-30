@@ -36,6 +36,9 @@ dependencies {
     implementation("org.web3j:crypto:4.12.3")
     // web3j RPC client — eth_getCode + eth_call for EIP-1271 smart-contract wallet verification
     implementation("org.web3j:core:4.12.3")
+    // Ed25519 for Solana signature verification. web3j pulls this transitively, but the verifier
+    // imports org.bouncycastle directly, so the dependency must be declared explicitly.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 
     // JWT (HS256 access tokens). jjwt-api at compile scope; impl + jackson are runtime plugins.
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")

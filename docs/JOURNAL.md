@@ -69,6 +69,38 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
+## M4 · piece 3 — SolanaSignatureVerifier (Ed25519)   (commit d485788)
+
+**What:** Added three new files and modified two existing ones.
+
+New in `identity`: `SolanaPublicKey` — a `public final` class with one public static method `decode(String base58Address) → byte[32]`. This is the single authoritative source for the "base58 → 32 bytes + length check" logic. Modified `Namespace.SOLANA.validateAddress` to delegate its body to `SolanaPublicKey.decode` (a single-line call plus the return), making the refactor behavior-preserving: same thrown type, identical error messages, same return value — zero double-decode because the bytes the helper already computed are discarded and the address string is returned. No change to `EIP155`.
+
+New in `verification`: `SolanaSignatureVerifier` — a standalone `public final class` with the public method `verify(byte[] message, byte[] signature, String base58Address) throws VerificationException`. It calls `SolanaPublicKey.decode` for address validation (wraps `IllegalArgumentException` as `VerificationException`), checks signature length is exactly 64 bytes and message is non-null (structural `VerificationException`), then calls `org.bouncycastle.math.ec.rfc8032.Ed25519.verify` on raw bytes. On false: throws `VerificationException("signature does not verify against public key")`. On true: returns `new VerifiedIdentity(base58Address)`. Does **not** implement `SignatureVerifier`, does not touch `VerificationRequest`. Framework-free; `LayerBoundaryTest` still passes.
+
+New in test: `SolanaSignatureVerifierTest` — 10 tests, 0 skipped, all passing. (Originally shipped with reject-wrong-key `@Disabled`; enabled in a follow-up commit once RFC 8032 TEST 1 pubkey was confirmed as `FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z`.) Coverage: decode-sanity guard (address → RFC pubkey bytes); accept-valid (RFC 8032 §7.1 TEST 2 vector end-to-end); reject-tampered-message and reject-tampered-signature (both assert the clean-false message by content); reject-short-signature (63 bytes, structural message); reject-long-signature (65 bytes, structural message); reject-malformed-address non-base58 and wrong-length; reject-null-message. Test hex vector supplied externally — not generated.
+
+`build.gradle.kts`: added `implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")` — same version already pulled transitively by web3j; made explicit because the verifier directly imports `org.bouncycastle`.
+
+Report (from `build/reports/tests/test/index.html`):
+- `SolanaSignatureVerifierTest`: 10 tests, 0 failures, 1 skipped, 0.015s
+- `CaipAccountIdTest`: 28 tests, 0 failures, 0 skipped (Namespace refactor did not regress identity tests)
+- `NamespaceTest`: 6 tests, 0 failures, 0 skipped
+- `LayerBoundaryTest`: 1 test, 0 failures, 0 skipped
+
+**Why:** Standalone-not-seam was chosen because the obstacle is not just `VerificationRequest` (EVM-shaped) but the entire orchestration layer. `VerifyAndAuthenticate` hardcodes `SiweMessageParser.parse()` (line 68), fixes the namespace to `Namespace.EIP155` (line 96), and contains a `chainId` field check (line 121) with no Solana analog. `UseCaseConfiguration` wires a single `SignatureVerifier` bean with no router. Implementing `SignatureVerifier` in piece 3 would produce an object that can never be plugged in until piece 4 builds the router — a hollow conformance that buys nothing.
+
+Rejected alternative — generalize `VerificationRequest` + `SignatureVerifier` interface now (option A): ruled out as premature (rule of three: the abstraction earns its keep only when the router and a second real end-to-end caller exist, both in piece 4) and as higher-churn (forces deciding the Solana signature wire-encoding before the API shape constrains it, and forces re-verifying `EthereumSignatureVerifier` and `ContractAwareSignatureVerifier` compile and pass against the changed types, all before the Ed25519 crypto can be run). The wire-encoding decision must happen anyway in piece 4; making it in piece 3 risks a revision and extra diff noise.
+
+Throw-on-Ed25519-false is correct for three reasons. First, Ed25519 takes the public key as an input and returns a boolean — there is no address to recover, so returning a `VerifiedIdentity` on false would have to return the address the caller already supplied, which would look like "authenticated" when it is not (silent auth bypass). Second, this already matches `ContractAwareSignatureVerifier`, which throws on false for both the EIP-1271 path (`"ERC-1271 validation failed"`) and the EIP-6492 path (`"EIP-6492 validation failed"`) — only the EOA ecrecover sub-case returns a different address, and that behavior is forced by ecrecover's mathematical contract, not chosen by design. Third, distinct messages for structural-invalid vs. clean-false are operationally meaningful: the former signals a client bug or crafted garbage; the latter signals a failed authentication attempt. Both deserve different monitoring treatment.
+
+The `SolanaPublicKey` helper was preferred over `Namespace.SOLANA.decodeAddressBytes` because: (a) all three abstract methods on `Namespace` must be implemented by every constant (compiler-enforced); making this abstract forces `EIP155` to implement base58 byte-decoding, which is meaningless for hex EVM addresses; (b) a concrete default-that-throws pushes "unsupported namespace" to runtime where the compiler used to catch it; (c) the byte-decoding operation belongs to Solana only — that is the signal it does not belong on the enum.
+
+**Learned:** When an interface's contract is defined by one side's mathematical primitive (ecrecover = recovery, Ed25519 = boolean verify), the interface cannot be shared without distorting one side's contract. The distortion here would be returning a `VerifiedIdentity` on false — not a type error, but a semantic one. Recognizing that the seam does not fit yet (piece 3) vs. forcing it to fit (option A) is exactly the rule-of-three judgment: the abstraction is not premature because we lack imagination, it is premature because the forcing function (a working Solana call path, a router, an API layer) does not yet exist.
+
+**Open / next:** Piece 4 scope: (1) generalize the seam — decide Solana signature wire-encoding, update `VerificationRequest` (or replace it) and the `SignatureVerifier` interface; (2) build the namespace router, replacing the single `SignatureVerifier` bean in `UseCaseConfiguration`; (3) restructure `VerifyAndAuthenticate` to dispatch by namespace (SIWE parse / EIP155 / chainId field check are all EVM-only today); (4) add `SiwsMessageFactory` + cluster→genesis table + the three genesis constants (mainnet, devnet, testnet). Also deferred: reject-wrong-key test needs the RFC 8032 TEST 1 pubkey base58-encoded as `SECOND_ADDRESS_TODO`.
+
+---
+
 ## M4 · housekeeping — Journal skill: two-commit citation rule   (commit 064c340)
 
 **What:** Replaced the same-commit journal cadence with a two-commit pattern in `.claude/skills/w3auth-journal/SKILL.md`. The Part 2 bullet, the Cadence section, and the frontmatter description were updated. The new rule: commit the code first; write the JOURNAL entry as a second commit on the same branch, citing the code commit's hash in the heading. No amend, no stamp commit, no placeholder.
