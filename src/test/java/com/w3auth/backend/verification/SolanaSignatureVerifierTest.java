@@ -1,7 +1,6 @@
 package com.w3auth.backend.verification;
 
 import com.w3auth.backend.identity.SolanaPublicKey;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,9 +28,10 @@ class SolanaSignatureVerifierTest {
             "085ac1e43e15996e458f3613d0f11d8c" +
             "387b2eaeb4302aeeb00d291612bb0c00";
 
-    // TODO: supply RFC 8032 TEST 1 pubkey base58-encoded as the second address.
-    // Do NOT generate a keypair; the value must come from the user.
-    private static final String SECOND_ADDRESS_TODO = "REPLACE_ME";
+    // RFC 8032 §7.1, TEST 1 — pubkey base58-encoded; confirmed with two independent tools
+    // (Python base58, Node bs58). Used to prove the TEST 2 signature does not verify
+    // against a different valid key (clean-false, not structural failure).
+    private static final String SECOND_ADDRESS = "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z";
 
     private static final String CLEAN_FALSE_MSG = "signature does not verify against public key";
     private static final String STRUCTURAL_MSG_PREFIX = "signature must be 64 bytes, got ";
@@ -87,10 +87,10 @@ class SolanaSignatureVerifierTest {
     }
 
     @Test
-    @Disabled("SECOND_ADDRESS_TODO: supply RFC 8032 TEST 1 pubkey as base58 address before enabling")
     void rejectWrongKey_differentValidAddressThrowsCleanFalse() {
+        // TEST 2 signature verified against TEST 1 key — well-formed inputs, Ed25519 returns false.
         assertThatThrownBy(() ->
-                verifier.verify(hexToBytes(MESSAGE_HEX), hexToBytes(SIGNATURE_HEX), SECOND_ADDRESS_TODO))
+                verifier.verify(hexToBytes(MESSAGE_HEX), hexToBytes(SIGNATURE_HEX), SECOND_ADDRESS))
                 .isInstanceOf(VerificationException.class)
                 .hasMessageContaining(CLEAN_FALSE_MSG);
     }
