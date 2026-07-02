@@ -13,7 +13,7 @@ import java.util.Objects;
  * logic. Passing the raw string through from {@code VerifyAndAuthenticate}
  * (where it is already in scope) is the minimal, correct approach.
  */
-public record VerificationRequest(SiweMessage message, String rawMessage, String signature) {
+public record VerificationRequest(AuthMessage message, String rawMessage, String signature) {
 
     public VerificationRequest {
         Objects.requireNonNull(message, "message must not be null");

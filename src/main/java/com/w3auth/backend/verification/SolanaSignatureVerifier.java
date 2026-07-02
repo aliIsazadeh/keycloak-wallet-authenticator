@@ -1,7 +1,10 @@
 package com.w3auth.backend.verification;
 
+import com.w3auth.backend.identity.Base58;
 import com.w3auth.backend.identity.SolanaPublicKey;
 import org.bouncycastle.math.ec.rfc8032.Ed25519;
+
+import java.nio.charset.StandardCharsets;
 
 /**
  * Ed25519 signature verifier for Solana wallet authentication.
@@ -14,17 +17,60 @@ import org.bouncycastle.math.ec.rfc8032.Ed25519;
  * {@link VerificationException} rather than returned as a different identity.
  * Returning a {@link VerifiedIdentity} on false would be a silent auth bypass.
  *
- * <p><b>Standalone in M4 piece 3.</b> This class does not implement
- * {@link SignatureVerifier} and does not touch {@link VerificationRequest}.
- * Seam wiring (interface generalization, namespace router, request shape) is
- * deferred to piece 4, where both concrete verifiers and the API layer exist
- * to constrain the design.
- *
  * <p>The caller is responsible for comparing {@link VerifiedIdentity#signerAddress()}
  * against the address claimed in the auth message — the same separation of concerns
  * that applies to the EVM verifier.
  */
-public final class SolanaSignatureVerifier {
+public final class SolanaSignatureVerifier implements SignatureVerifier {
+
+    @Override
+    public VerifiedIdentity verify(VerificationRequest request) throws VerificationException {
+        if (!(request.message() instanceof SiwsMessage)) {
+            throw new IllegalArgumentException("SolanaSignatureVerifier only supports SiwsMessage");
+        }
+
+        byte[] messageBytes = request.rawMessage().getBytes(StandardCharsets.UTF_8);
+        byte[] signatureBytes = decodeSignature(request.signature());
+
+        return verify(messageBytes, signatureBytes, request.message().address());
+    }
+
+    private static byte[] decodeSignature(String sigStr) throws VerificationException {
+        if (sigStr == null || sigStr.isBlank()) {
+            throw new VerificationException("signature must not be blank");
+        }
+
+        // Try hex decoding first if it matches hex format.
+        // A 64-byte signature is 128 hex characters.
+        String clean = (sigStr.startsWith("0x") || sigStr.startsWith("0X")) ? sigStr.substring(2) : sigStr;
+        if (clean.length() == 128 && isHexString(clean)) {
+            return hexToBytes(clean);
+        }
+
+        // Otherwise assume base58
+        try {
+            return Base58.decode(sigStr);
+        } catch (IllegalArgumentException e) {
+            throw new VerificationException("signature is neither valid hex nor valid base58", e);
+        }
+    }
+
+    private static boolean isHexString(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            if (Character.digit(s.charAt(i), 16) == -1) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static byte[] hexToBytes(String hex) {
+        byte[] out = new byte[hex.length() / 2];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+        }
+        return out;
+    }
 
     /**
      * Verifies an Ed25519 {@code signature} over {@code message} against the
