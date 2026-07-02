@@ -69,6 +69,25 @@ Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integ
 
 ---
 
+## M4 · piece 4 — Namespace Routing & SIWS Integration   (commit 123acfe)
+
+**What:** Generalized the authentication request seam and built routing logic to support multi-namespace (EVM/SIWE and Solana/SIWS) authentication natively. Modified 10 existing files and added 4 new files.
+
+New in `identity`: `SolanaCluster` — enum containing bidirectional mapping between the cluster names in SIWS strings ("mainnet", "devnet", "testnet") and CAIP-2 genesis hash references required by `CaipAccountId`. `Base58` was made `public` (both class and its `decode` method) to allow signature decoding in `verification`.
+New in `challenge`: `SiwsMessageFactory` — formats 10-line SIWS wire message strings using the translated cluster identifiers from `SolanaCluster`.
+New in `verification`: `AuthMessage` — sealed interface implemented by `SiweMessage` and `SiwsMessage` that abstracts message payload fields and exposes a `namespace()` segment. `VerificationRequest` was refactored to hold `AuthMessage`. `SolanaSignatureVerifier` was updated to implement `SignatureVerifier`, adding dual decoding for signatures (base58 and hex formats). `NamespaceRoutingSignatureVerifier` — routes signature verification to either EVM (`ContractAwareSignatureVerifier`) or Solana (`SolanaSignatureVerifier`) based on the message namespace. `ContractAwareSignatureVerifier` was updated to type-assert and fail-fast for EIP155 messages only.
+Modified in `usecase`: `VerifyAndAuthenticate` was rewritten to dynamically detect namespace by checking message headers, route parser (SIWE vs SIWS), perform namespace-specific validation (translating chainId with `SolanaCluster` and comparing address case-sensitively for Solana), and upsert dynamic identities.
+Modified in `config`: `UseCaseConfiguration` wires the routing verifier.
+Modified in `api`: `ChallengeController` switches factories dynamically based on namespace.
+
+**Why:** Decouples the core orchestration layer (`VerifyAndAuthenticate`) from EVM-only assumptions, preparing the codebase to act as a generic multi-namespace wallet authentication protocol. Moving the wire format generation (`SiwsMessageFactory`) and routing verifier configuration to their respective packages ensures package boundary hygiene. Using real record instances in `NamespaceRoutingSignatureVerifierTest` avoids JDK Mockito proxy limitations on sealed interfaces.
+
+**Learned:** Data carrier types (records) representing wire payloads are best instantiated with real values in test cases rather than mocked. Using sealed types enforces structural compliance on subclasses compile-time but breaks dynamic mocking tools. Building structural-validity gates (signature decoder for both hex/base58) early prevents malformed signatures from hitting lower layers.
+
+**Open / next:** M4 is completed end-to-end. We can now merge the namespace support to develop.
+
+---
+
 ## M4 · piece 3 — SolanaSignatureVerifier (Ed25519)   (commit d485788)
 
 **What:** Added three new files and modified two existing ones.
