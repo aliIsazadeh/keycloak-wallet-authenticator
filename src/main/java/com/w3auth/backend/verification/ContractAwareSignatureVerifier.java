@@ -48,6 +48,9 @@ public class ContractAwareSignatureVerifier implements SignatureVerifier {
 
     @Override
     public VerifiedIdentity verify(VerificationRequest request) throws VerificationException {
+        if (!(request.message() instanceof SiweMessage)) {
+            throw new IllegalArgumentException("ContractAwareSignatureVerifier only supports SiweMessage");
+        }
         // Step a: hex-decode before anything else — reject malformed input immediately.
         byte[] sigBytes = decodeSignatureHex(request.signature());
 

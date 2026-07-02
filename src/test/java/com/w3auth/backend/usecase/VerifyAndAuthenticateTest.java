@@ -4,6 +4,7 @@ import com.w3auth.backend.challenge.Challenge;
 import com.w3auth.backend.challenge.ChallengePolicy;
 import com.w3auth.backend.challenge.ChallengeStore;
 import com.w3auth.backend.challenge.SiweMessageFactory;
+import com.w3auth.backend.challenge.SiwsMessageFactory;
 import com.w3auth.backend.identity.CaipAccountId;
 import com.w3auth.backend.identity.Namespace;
 import com.w3auth.backend.identity.WalletIdentity;
@@ -48,6 +49,9 @@ class VerifyAndAuthenticateTest {
     private static final String NONCE = "testNonce123abc";
 
     private static final CaipAccountId ACCOUNT = CaipAccountId.of(Namespace.EIP155, CHAIN_ID, ADDRESS);
+    private static final String SOL_ADDRESS = "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5";
+    private static final String SOL_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"; // mainnet
+    private static final CaipAccountId SOL_ACCOUNT = CaipAccountId.of(Namespace.SOLANA, SOL_GENESIS, SOL_ADDRESS);
     private static final ChallengePolicy POLICY = new ChallengePolicy(
             "example.com", "https://example.com/login", Duration.ofMinutes(5));
 
@@ -247,6 +251,61 @@ class VerifyAndAuthenticateTest {
                 .execute(SiweMessageFactory.create(c), "sig"))
                 .isInstanceOf(VerificationException.class)
                 .hasMessageContaining("signer mismatch");
+    }
+
+    // ── Solana Namespace Tests ───────────────────────────────────────────────
+
+    @Test
+    void execute_solanaHappyPath_returnsAuthResultWithToken() throws VerificationException {
+        Challenge c = challenge(SOL_ACCOUNT, NONCE, POLICY.domain(), POLICY.uri());
+        store.store(c);
+
+        AuthResult result = useCase(returning(SOL_ADDRESS))
+                .execute(SiwsMessageFactory.create(c), "dummy-sig");
+
+        assertThat(result.token()).isNotBlank();
+        assertThat(result.refreshToken()).isEqualTo(InMemoryRefreshTokenStore.STUB_RAW_TOKEN);
+        assertThat(result.expiresAt()).isEqualTo(FIXED_NOW.plus(JWT_TTL));
+
+        Claims claims = Jwts.parser()
+                .verifyWith(SIGNING_KEY)
+                .clock(() -> Date.from(FIXED_NOW))
+                .build()
+                .parseSignedClaims(result.token())
+                .getPayload();
+
+        assertThat(claims.getSubject())
+                .isEqualTo(SOL_ACCOUNT.identityKey().toJwtSubject());
+
+        assertThat(identityStore.upserted).containsExactly(SOL_ACCOUNT);
+    }
+
+    @Test
+    void execute_solanaSignerMismatch_throwsVerificationException() {
+        Challenge c = challenge(SOL_ACCOUNT, NONCE, POLICY.domain(), POLICY.uri());
+        store.store(c);
+
+        String otherSolAddress = "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z";
+
+        assertThatThrownBy(() -> useCase(returning(otherSolAddress))
+                .execute(SiwsMessageFactory.create(c), "sig"))
+                .isInstanceOf(VerificationException.class)
+                .hasMessageContaining("signer mismatch");
+    }
+
+    @Test
+    void execute_solanaWrongChainId_throwsVerificationException() {
+        Challenge c = challenge(SOL_ACCOUNT, NONCE, POLICY.domain(), POLICY.uri());
+        store.store(c);
+
+        // Challenge is for mainnet (5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp), message has devnet
+        CaipAccountId devnetAccount = CaipAccountId.of(Namespace.SOLANA, "EtWTRABZaYq6iMfeYKouRu166VU2xqa1", SOL_ADDRESS);
+        Challenge wrongChainChallenge = challenge(devnetAccount, NONCE, POLICY.domain(), POLICY.uri());
+        String wrongChainMessage = SiwsMessageFactory.create(wrongChainChallenge);
+
+        assertThatThrownBy(() -> useCase(returning(SOL_ADDRESS)).execute(wrongChainMessage, "sig"))
+                .isInstanceOf(VerificationException.class)
+                .hasMessageContaining("chainId mismatch");
     }
 
     // ── in-memory stubs ───────────────────────────────────────────────────────

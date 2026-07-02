@@ -12,7 +12,9 @@ import com.w3auth.backend.usecase.VerifyAndAuthenticate;
 import com.w3auth.backend.verification.ChainClient;
 import com.w3auth.backend.verification.ContractAwareSignatureVerifier;
 import com.w3auth.backend.verification.EthereumSignatureVerifier;
+import com.w3auth.backend.verification.NamespaceRoutingSignatureVerifier;
 import com.w3auth.backend.verification.SignatureVerifier;
+import com.w3auth.backend.verification.SolanaSignatureVerifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -28,7 +30,9 @@ class UseCaseConfiguration {
 
     @Bean
     SignatureVerifier signatureVerifier(ChainClient chainClient) {
-        return new ContractAwareSignatureVerifier(new EthereumSignatureVerifier(), chainClient);
+        SignatureVerifier ethereum = new ContractAwareSignatureVerifier(new EthereumSignatureVerifier(), chainClient);
+        SignatureVerifier solana = new SolanaSignatureVerifier();
+        return new NamespaceRoutingSignatureVerifier(ethereum, solana);
     }
 
     @Bean

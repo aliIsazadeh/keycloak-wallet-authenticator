@@ -10,7 +10,7 @@ import java.util.Arrays;
  * https://github.com/web3j/web3j/blob/master/crypto/src/main/java/org/web3j/crypto/Base58.java
  * Decode semantics are byte-for-byte identical to the web3j original.
  */
-final class Base58 {
+public final class Base58 {
 
     static final char[] ALPHABET =
             "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray();
@@ -32,7 +32,7 @@ final class Base58 {
      * @throws IllegalArgumentException if {@code input} contains a character outside
      *         the Base58 alphabet ({@code 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz})
      */
-    static byte[] decode(String input) {
+    public static byte[] decode(String input) {
         if (input.isEmpty()) {
             return new byte[0];
         }
