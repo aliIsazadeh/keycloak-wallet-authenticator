@@ -55,7 +55,7 @@ class RefreshControllerTest {
 
     @Test
     void validRequest_returns200WithTokens() throws Exception {
-        when(refreshSession.execute(any())).thenReturn(STUB_RESULT);
+        when(refreshSession.execute(any(), any(), any())).thenReturn(STUB_RESULT);
 
         mvc.perform(post("/v1/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -92,7 +92,7 @@ class RefreshControllerTest {
 
     @Test
     void reuseAndExpired_produceByteIdenticalResponses() throws Exception {
-        when(refreshSession.execute(any()))
+        when(refreshSession.execute(any(), any(), any()))
                 .thenThrow(new RefreshTokenException(
                         RefreshTokenException.Reason.REUSE_DETECTED,
                         "refresh token reuse detected — family revoked"))

@@ -5,6 +5,7 @@ import com.w3auth.backend.challenge.ChallengeStore;
 import com.w3auth.backend.identity.WalletIdentityStore;
 import com.w3auth.backend.session.JwtService;
 import com.w3auth.backend.session.RefreshTokenStore;
+import com.w3auth.backend.usecase.AuthEventStore;
 import com.w3auth.backend.usecase.Logout;
 import com.w3auth.backend.usecase.RefreshSession;
 import com.w3auth.backend.usecase.RequestChallenge;
@@ -41,19 +42,21 @@ class UseCaseConfiguration {
             SignatureVerifier signatureVerifier,
             WalletIdentityStore identityStore,
             RefreshTokenStore refreshTokenStore,
-            JwtService jwtService, Clock clock) {
-        return new VerifyAndAuthenticate(store, policy, signatureVerifier, identityStore, refreshTokenStore, jwtService, clock);
+            JwtService jwtService, Clock clock,
+            AuthEventStore authEventStore) {
+        return new VerifyAndAuthenticate(store, policy, signatureVerifier, identityStore, refreshTokenStore, jwtService, clock, authEventStore);
     }
 
     @Bean
     RefreshSession refreshSession(RefreshTokenStore refreshTokenStore,
                                   WalletIdentityStore walletIdentityStore,
-                                  JwtService jwtService, Clock clock) {
-        return new RefreshSession(refreshTokenStore, walletIdentityStore, jwtService, clock);
+                                  JwtService jwtService, Clock clock,
+                                  AuthEventStore authEventStore) {
+        return new RefreshSession(refreshTokenStore, walletIdentityStore, jwtService, clock, authEventStore);
     }
 
     @Bean
-    Logout logout(RefreshTokenStore refreshTokenStore) {
-        return new Logout(refreshTokenStore);
+    Logout logout(RefreshTokenStore refreshTokenStore, Clock clock, AuthEventStore authEventStore) {
+        return new Logout(refreshTokenStore, clock, authEventStore);
     }
 }

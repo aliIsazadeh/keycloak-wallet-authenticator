@@ -15,13 +15,9 @@ package com.w3auth.backend.challenge;
  * statement block entirely; {@code ChallengePolicy} has no {@code statement}
  * field — one can be added if a real client needs it.
  *
- * <p><strong>Known M0 limitation:</strong> the {@code address} line uses
- * {@link com.w3auth.backend.identity.CaipAccountId}'s canonical lowercase
- * form, not the EIP-55 mixed-case checksum that wallets typically display.
- * Lowercase is cryptographically equivalent for signing/recovery, but may not
- * visually match the address as shown in the user's wallet. EIP-55 checksum
- * encoding requires Keccak-256 (distinct from JDK's SHA3-256) and is deferred
- * to M1, where address-comparison logic already needs to exist.
+ * <p><strong>EIP-55 Checksum:</strong> the {@code address} line is formatted
+ * using the EIP-55 checksum encoding (via web3j's {@code Keys.toChecksumAddress})
+ * to match what wallets typically display and prevent wallet warnings.
  */
 public final class SiweMessageFactory {
 
@@ -34,8 +30,12 @@ public final class SiweMessageFactory {
      * Builds the EIP-4361 message to be signed for {@code challenge}.
      */
     public static String create(Challenge challenge) {
+        String address = challenge.account().address();
+        if (challenge.account().namespace() == com.w3auth.backend.identity.Namespace.EIP155) {
+            address = org.web3j.crypto.Keys.toChecksumAddress(address);
+        }
         return challenge.domain() + " wants you to sign in with your Ethereum account:\n"
-                + challenge.account().address() + "\n"
+                + address + "\n"
                 + "\n"
                 + "\n"
                 + "URI: " + challenge.uri() + "\n"

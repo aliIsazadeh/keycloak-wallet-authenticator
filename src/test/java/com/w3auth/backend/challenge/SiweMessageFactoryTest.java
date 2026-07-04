@@ -26,7 +26,7 @@ class SiweMessageFactoryTest {
 
         assertThat(lines).containsExactly(
                 "example.com wants you to sign in with your Ethereum account:",
-                "0xabc1234567890abc1234567890abc12345678901",
+                org.web3j.crypto.Keys.toChecksumAddress(ACCOUNT.address()),
                 "",
                 "",
                 "URI: https://example.com/login",
@@ -71,7 +71,7 @@ class SiweMessageFactoryTest {
 
         String expected =
                 "example.com wants you to sign in with your Ethereum account:\n"
-                + "0xabc1234567890abc1234567890abc12345678901\n"
+                + org.web3j.crypto.Keys.toChecksumAddress(ACCOUNT.address()) + "\n"
                 + "\n"
                 + "\n"
                 + "URI: https://example.com/login\n"
@@ -111,7 +111,7 @@ class SiweMessageFactoryTest {
     }
 
     @Test
-    void usesCanonicalLowercaseAddressFromAccount() {
+    void usesChecksumAddressFromAccount() {
         CaipAccountId mixedCaseSource = CaipAccountId.of(Namespace.EIP155, "1", "0xABC1234567890ABC1234567890ABC12345678901");
         Challenge challenge = new Challenge(
                 mixedCaseSource, "abc123nonce", "example.com", "https://example.com/login",
@@ -119,7 +119,7 @@ class SiweMessageFactoryTest {
 
         String message = SiweMessageFactory.create(challenge);
 
-        assertThat(message).contains("0xabc1234567890abc1234567890abc12345678901");
-        assertThat(message).doesNotContain("0xABC1234567890ABC1234567890ABC12345678901");
+        String checksumAddress = org.web3j.crypto.Keys.toChecksumAddress(mixedCaseSource.address());
+        assertThat(message).contains(checksumAddress);
     }
 }

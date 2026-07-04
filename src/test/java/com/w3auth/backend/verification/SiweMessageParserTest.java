@@ -34,7 +34,7 @@ class SiweMessageParserTest {
         SiweMessage parsed = SiweMessageParser.parse(message);
 
         assertThat(parsed.domain()).isEqualTo(challenge.domain());
-        assertThat(parsed.address()).isEqualTo(challenge.account().address());
+        assertThat(parsed.address()).isEqualToIgnoringCase(challenge.account().address());
         assertThat(parsed.uri()).isEqualTo(challenge.uri());
         assertThat(parsed.version()).isEqualTo("1");
         assertThat(parsed.chainId()).isEqualTo(challenge.chainId());

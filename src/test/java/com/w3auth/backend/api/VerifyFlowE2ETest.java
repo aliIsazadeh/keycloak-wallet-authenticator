@@ -154,6 +154,56 @@ class VerifyFlowE2ETest {
     }
 
     @Test
+    void solanaLoginRoundTrip_returnsValidJwtWithCorrectSub() throws Exception {
+        // Step 1: request a challenge for the Solana address on devnet
+        String solAddress = "BddU7zEvNv4yb8CgWcPtgvhUF1d1YDVcpHmD5iiM4N2B";
+        String accountId = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:" + solAddress;
+
+        MvcResult challengeResult = mvc.perform(post("/v1/auth/challenge")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"accountId\":\"" + accountId + "\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Map<?, ?> challengeBody = objectMapper.readValue(
+                challengeResult.getResponse().getContentAsString(), Map.class);
+        String rawMessage = (String) challengeBody.get("message");
+        assertThat(rawMessage).isNotBlank();
+
+        // Step 2: sign the raw SIWS message using BouncyCastle Ed25519
+        byte[] privateKey = Numeric.hexStringToByteArray("af3b1bd0951b7768aa8f5a41e80bcba2ad894fdf4f77da8154228706934b37be");
+        byte[] messageBytes = rawMessage.getBytes(StandardCharsets.UTF_8);
+        byte[] signatureBytes = new byte[64];
+        org.bouncycastle.math.ec.rfc8032.Ed25519.sign(privateKey, 0, messageBytes, 0, messageBytes.length, signatureBytes, 0);
+        String signature = "0x" + Numeric.toHexStringNoPrefix(signatureBytes);
+
+        // Step 3: verify — submit signed message, expect access JWT
+        MvcResult verifyResult = mvc.perform(post("/v1/auth/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":" + objectMapper.writeValueAsString(rawMessage)
+                                + ",\"signature\":\"" + signature + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isString())
+                .andExpect(jsonPath("$.expiresAt").isString())
+                .andReturn();
+
+        Map<?, ?> verifyBody = objectMapper.readValue(
+                verifyResult.getResponse().getContentAsString(), Map.class);
+        String token = (String) verifyBody.get("token");
+
+        // Step 4: parse and verify the JWT
+        Claims claims = Jwts.parser()
+                .verifyWith(SIGNING_KEY)
+                .clock(() -> Date.from(java.time.Instant.now()))
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+
+        assertThat(claims.getSubject()).startsWith("solana:");
+        assertThat(claims.getSubject()).contains(solAddress);
+    }
+
+    @Test
     void replay_secondVerifyWithSameNonce_returns401() throws Exception {
         String accountId = "eip155:1:" + HARDHAT_ADDRESS;
         MvcResult challengeResult = mvc.perform(post("/v1/auth/challenge")

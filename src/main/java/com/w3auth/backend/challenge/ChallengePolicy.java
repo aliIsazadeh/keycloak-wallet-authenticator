@@ -17,7 +17,11 @@ import java.time.Duration;
  *       being configured separately, so the two cannot drift apart.</li>
  * </ul>
  */
-public record ChallengePolicy(String domain, String uri, Duration nonceTtl) {
+public record ChallengePolicy(String domain, String uri, Duration nonceTtl, Duration clockSkewTolerance) {
+
+    public ChallengePolicy(String domain, String uri, Duration nonceTtl) {
+        this(domain, uri, nonceTtl, Duration.ofMinutes(1));
+    }
 
     public ChallengePolicy {
         if (domain == null || domain.isBlank()) {
@@ -28,6 +32,9 @@ public record ChallengePolicy(String domain, String uri, Duration nonceTtl) {
         }
         if (nonceTtl == null || nonceTtl.isZero() || nonceTtl.isNegative()) {
             throw new IllegalArgumentException("nonceTtl must be positive");
+        }
+        if (clockSkewTolerance == null) {
+            clockSkewTolerance = Duration.ofMinutes(1);
         }
     }
 }

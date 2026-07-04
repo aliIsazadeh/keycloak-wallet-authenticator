@@ -1,3 +1,6 @@
+> [!WARNING]
+> This document is DEPRECATED. Please refer to the corresponding ANTIGRAVITY documents in the root and under docs/ instead. Do not modify this legacy file.
+
 # CLAUDE.md — Wallet Authentication Backend
 
 This file is the steering wheel for the project. Read it before every task.

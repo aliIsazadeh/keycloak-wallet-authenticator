@@ -12,7 +12,7 @@ description: >-
 
 # W3-Auth architecture guardrails
 
-Source of truth is the live repo plus `CLAUDE.md` and `docs/ARCHITECTURE.md`.
+Source of truth is the live repo plus `ANTIGRAVITY.md` and `docs/ANTIGRAVITY_ARCHITECTURE.md`.
 The project-knowledge copies of those docs can lag the repo — when a doc
 conflicts with the repo or the current conversation, the repo wins, and the
 drift should be flagged explicitly.

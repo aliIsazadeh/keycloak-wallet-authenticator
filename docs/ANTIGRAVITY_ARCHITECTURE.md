@@ -108,7 +108,7 @@ chainId).
    expired, or already used.
 3. Validate message fields against the issued challenge and policy: domain,
    uri, chainId, issuedAt/expiration (with small clock-skew tolerance).
-4. Verify the signature (V1: EOA `ecrecover` only).
+4. Verify the signature (EVM: EOA or EIP-1271/6492; Solana: Ed25519).
 5. Check the recovered signer equals the address claimed inside the message.
 6. Derive the `CaipAccountId`; upsert `wallet_identity`.
 7. Issue a short access JWT + a refresh token; persist the refresh-token row.
@@ -127,7 +127,7 @@ whole family if a already-rotated token is reused (reuse = likely theft).
   no revocation needed on the hot path; it just expires.
   The subject is defined canonically in
   `CaipAccountId.IdentityKey.toJwtSubject()` so it cannot drift between
-  `/verify` and (coming) `/refresh`.
+  `/verify` and `/refresh`.
   - *Why HS256 not RS256/ES256:* asymmetric signing only earns its keep when a
     separate service or SDK verifies tokens without sharing the secret. V1 is
     one service that both issues and verifies. Because access tokens are short,
@@ -217,11 +217,9 @@ has two real implementations, which is the rule-of-three justification.
 - **M3b** ✅ — EIP-6492 counterfactual wallets; `Eip6492Envelope` well-formedness
   gate; `isValidSignatureDeployless` via deployless `eth_call` to the
   `ValidateSigOffchain` universal validator.
-- **M4** — a second namespace (Solana, Ed25519) to prove the abstraction; only
-  then harden any registry. Unscoped.
-
-Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers
-integration tests.
+- **M4** ✅ — a second namespace (Solana, Ed25519) to prove the abstraction; only
+  then harden any registry.
+- **Cross-cutting** ✅ — rate limiting on challenge requests, audit logging of auth events in Postgres, and Testcontainers integration tests.
 
 ## 10. Open decisions / revisit later
 

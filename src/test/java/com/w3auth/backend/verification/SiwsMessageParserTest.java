@@ -113,30 +113,30 @@ class SiwsMessageParserTest {
 
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> SiwsMessageParser.parse(truncated))
-                .withMessageContaining("expected 10 lines");
+                .withMessageContaining("expected at least 10 lines");
     }
 
     @Test
-    void rejects_tooManyLines_walletExtras() {
-        // Wallet-built messages may carry Not Before / Request ID / Resources — all refused.
+    void accepts_tooManyLines_walletExtras() {
+        // Wallet-built messages may carry Not Before / Request ID / Resources — all accepted now.
         String withExtras = CANONICAL +
                 "\nNot Before: 2026-06-15T12:01:00Z\nRequest ID: x\nResources:\n- https://example.com/a";
 
-        assertThatIllegalArgumentException()
-                .isThrownBy(() -> SiwsMessageParser.parse(withExtras))
-                .withMessageContaining("expected 10 lines");
+        SiwsMessage parsed = SiwsMessageParser.parse(withExtras);
+        assertThat(parsed.domain()).isEqualTo("example.com");
+        assertThat(parsed.address()).isEqualTo("7S3P4HxJpyyigGzodYwHtCxZyUQe9JiBMHyRWXArAaKv");
     }
 
     // ── blank-line discipline ─────────────────────────────────────────────────
 
     @Test
-    void rejects_nonBlankLineThatShouldBeBlank() {
-        // Replace the first "\n\n" (lines 2 and 3 separator) with "\n \n"
-        String corrupted = CANONICAL.replaceFirst("\n\n", "\n \n");
+    void accepts_statementBlocks() {
+        // Replace the separator with statement text
+        String withStatement = CANONICAL.replace("\n\n\n", "\nStatement text here\n\n");
 
-        assertThatIllegalArgumentException()
-                .isThrownBy(() -> SiwsMessageParser.parse(corrupted))
-                .withMessageContaining("must be blank");
+        SiwsMessage parsed = SiwsMessageParser.parse(withStatement);
+        assertThat(parsed.domain()).isEqualTo("example.com");
+        assertThat(parsed.address()).isEqualTo("7S3P4HxJpyyigGzodYwHtCxZyUQe9JiBMHyRWXArAaKv");
     }
 
     // ── missing prefix ────────────────────────────────────────────────────────

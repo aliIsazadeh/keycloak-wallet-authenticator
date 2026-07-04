@@ -1,7 +1,7 @@
 ---
 name: w3auth-journal
 description: >-
-  How to write docs/JOURNAL.md entries for the W3-Auth backend. Use this
+  How to write docs/ANTIGRAVITY_JOURNAL.md entries for the W3-Auth backend. Use this
   whenever finishing a step or feature and writing its journal entry, or just
   before a milestone merge. Also use it when updating the journal's big-picture
   section after a structural change. Encodes the two-part structure, the
@@ -12,7 +12,7 @@ description: >-
 
 # W3-Auth journal discipline
 
-`git`, the tests, `CLAUDE.md`, and `docs/ARCHITECTURE.md` hold the mechanical
+`git`, the tests, `ANTIGRAVITY.md`, and `docs/ANTIGRAVITY_ARCHITECTURE.md` hold the mechanical
 record of *what* was built. The journal captures what those can't: the **why**,
 the **rejected alternative**, and the **lesson**. If the journal would only
 restate the diff, it isn't pulling its weight.

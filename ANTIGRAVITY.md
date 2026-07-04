@@ -29,15 +29,16 @@ custom SDK — the backend treats them all identically.
 ## V1 scope (hold this line)
 
 IN scope:
-- SIWE only (EIP-4361)
-- EVM chains only
+- SIWE (EIP-4361) and SIWS (Solana Sign-In)
+- EVM chains and Solana (non-EVM)
 - EOA (normal) wallets
 - EIP-1271 deployed smart-contract wallets (M3a, shipped)
 - EIP-6492 counterfactual smart-contract wallets (M3b, shipped)
+- Multi-namespace SIWX abstraction layer (M4, shipped)
+- Rate limiting on challenge requests (shipped)
+- Audit logging of auth events in Postgres (shipped)
 
 OUT of scope for V1 (do not build yet):
-- Solana / non-EVM chains
-- SIWX abstraction layer
 - Plugin system or protocol registry
 - JWT denylist / instant access-token revocation
 - Multi-module Gradle build (single module + packages for now)

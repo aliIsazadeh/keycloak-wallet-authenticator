@@ -44,7 +44,7 @@ class LogoutControllerTest {
 
     @Test
     void validRequest_returns204() throws Exception {
-        doNothing().when(logout).execute(any());
+        doNothing().when(logout).execute(any(), any(), any());
 
         mvc.perform(post("/v1/auth/logout")
                         .contentType(MediaType.APPLICATION_JSON)

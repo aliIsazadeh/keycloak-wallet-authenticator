@@ -44,6 +44,12 @@ class GlobalExceptionHandler {
         return Map.of("error", ex.getMessage());
     }
 
+    @ExceptionHandler(com.w3auth.backend.challenge.RateLimitException.class)
+    @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
+    Map<String, String> handleRateLimit(com.w3auth.backend.challenge.RateLimitException ex) {
+        return Map.of("error", ex.getMessage());
+    }
+
     // All RefreshTokenException causes produce a byte-identical 401 — no oracle distinguishes
     // reuse from expiry or a missing token at the wire. Log level alone branches on reason:
     // reuse is a theft signal (WARN); all other failures are routine (DEBUG).

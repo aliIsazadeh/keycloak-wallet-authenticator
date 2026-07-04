@@ -11,6 +11,6 @@ class ChallengeConfiguration {
 
     @Bean
     ChallengePolicy challengePolicy(ChallengeProperties properties) {
-        return new ChallengePolicy(properties.domain(), properties.uri(), properties.nonceTtl());
+        return new ChallengePolicy(properties.domain(), properties.uri(), properties.nonceTtl(), properties.clockSkewTolerance());
     }
 }

@@ -28,40 +28,67 @@ public class RefreshSession {
     private final WalletIdentityStore walletIdentityStore;
     private final JwtService jwtService;
     private final Clock clock;
+    private final AuthEventStore authEventStore;
+
+    /**
+     * Backward-compatible constructor for testing.
+     */
+    public RefreshSession(RefreshTokenStore refreshTokenStore,
+                          WalletIdentityStore walletIdentityStore,
+                          JwtService jwtService, Clock clock) {
+        this(refreshTokenStore, walletIdentityStore, jwtService, clock, (id, type, ip, ua, details, ts) -> {});
+    }
 
     public RefreshSession(RefreshTokenStore refreshTokenStore,
                           WalletIdentityStore walletIdentityStore,
-                          JwtService jwtService,
-                          Clock clock) {
+                          JwtService jwtService, Clock clock,
+                          AuthEventStore authEventStore) {
         this.refreshTokenStore = refreshTokenStore;
         this.walletIdentityStore = walletIdentityStore;
         this.jwtService = jwtService;
         this.clock = clock;
+        this.authEventStore = authEventStore;
+    }
+
+    /**
+     * Backward-compatible execute signature.
+     */
+    public RefreshResult execute(String rawRefreshToken) {
+        return execute(rawRefreshToken, null, null);
     }
 
     /**
      * Rotates {@code rawRefreshToken} and returns a fresh token pair.
      *
      * @param rawRefreshToken the opaque refresh token previously given to the client
+     * @param ipAddress       the client's IP address (for audit logs)
+     * @param userAgent       the client's User-Agent string (for audit logs)
      * @return the new access token, new refresh token, and access-token expiry
      * @throws RefreshTokenException for all failure cases (unknown, expired, revoked,
      *         reuse detected, lost race, identity missing) — all map to the same 401
      */
-    public RefreshResult execute(String rawRefreshToken) {
-        // Step 1: rotate — all token validation happens here; propagate any exception unchanged
-        TokenGrant grant = refreshTokenStore.rotate(rawRefreshToken);
+    public RefreshResult execute(String rawRefreshToken, String ipAddress, String userAgent) {
+        Instant now = clock.instant();
+        try {
+            // Step 1: rotate — all token validation happens here; propagate any exception unchanged
+            TokenGrant grant = refreshTokenStore.rotate(rawRefreshToken);
 
-        // Step 2: resolve the identity the rotated row belongs to
-        WalletIdentity identity = walletIdentityStore.findById(grant.token().identityId())
-                .orElseThrow(() -> new RefreshTokenException(
-                        RefreshTokenException.Reason.NOT_FOUND,
-                        "identity not found for rotated token"));
+            // Step 2: resolve the identity the rotated row belongs to
+            WalletIdentity identity = walletIdentityStore.findById(grant.token().identityId())
+                    .orElseThrow(() -> new RefreshTokenException(
+                            RefreshTokenException.Reason.NOT_FOUND,
+                            "identity not found for rotated token"));
 
-        // Step 3: mint access JWT — sub is identical to what /verify produces for this wallet
-        Instant issuedAt = clock.instant();
-        String accessToken = jwtService.issue(identity.identityKey(), issuedAt);
-        Instant expiresAt = issuedAt.plus(jwtService.ttl());
+            // Step 3: mint access JWT — sub is identical to what /verify produces for this wallet
+            String accessToken = jwtService.issue(identity.identityKey(), now);
+            Instant expiresAt = now.plus(jwtService.ttl());
 
-        return new RefreshResult(accessToken, grant.rawToken(), expiresAt);
+            authEventStore.logEvent(identity.id(), "REFRESH_SUCCESS", ipAddress, userAgent, null, now);
+
+            return new RefreshResult(accessToken, grant.rawToken(), expiresAt);
+        } catch (Exception e) {
+            authEventStore.logEvent(null, "REFRESH_FAILED", ipAddress, userAgent, e.getMessage(), now);
+            throw e;
+        }
     }
 }

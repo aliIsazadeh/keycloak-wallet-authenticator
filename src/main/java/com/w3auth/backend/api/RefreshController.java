@@ -2,6 +2,7 @@ package com.w3auth.backend.api;
 
 import com.w3auth.backend.usecase.RefreshResult;
 import com.w3auth.backend.usecase.RefreshSession;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,8 +20,10 @@ class RefreshController {
     }
 
     @PostMapping("/refresh")
-    RefreshResponse refresh(@Valid @RequestBody RefreshRequest request) {
-        RefreshResult result = refreshSession.execute(request.refreshToken());
+    RefreshResponse refresh(@Valid @RequestBody RefreshRequest request, HttpServletRequest servletRequest) {
+        String ip = servletRequest.getRemoteAddr();
+        String userAgent = servletRequest.getHeader("User-Agent");
+        RefreshResult result = refreshSession.execute(request.refreshToken(), ip, userAgent);
         return new RefreshResponse(result.token(), result.refreshToken(), result.expiresAt());
     }
 }

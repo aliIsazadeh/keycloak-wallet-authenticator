@@ -8,5 +8,10 @@ import java.time.Duration;
  * Binds {@code walletauth.challenge.*} to construct the {@link com.w3auth.backend.challenge.ChallengePolicy} bean.
  */
 @ConfigurationProperties(prefix = "walletauth.challenge")
-record ChallengeProperties(String domain, String uri, Duration nonceTtl) {
+record ChallengeProperties(String domain, String uri, Duration nonceTtl, Duration clockSkewTolerance) {
+    ChallengeProperties {
+        if (clockSkewTolerance == null) {
+            clockSkewTolerance = Duration.ofMinutes(1);
+        }
+    }
 }

@@ -5,15 +5,9 @@ import java.time.format.DateTimeParseException;
 import java.util.Set;
 
 /**
- * Parses the SIWS (Sign-In With Solana) message string. Strict and fail-closed:
- * any deviation from the expected 10-line layout throws {@link IllegalArgumentException}.
- *
- * <p>This parser is intentionally narrow — it only accepts the exact canonical
- * format (no statement block, no optional fields). Policy validation (domain match,
- * nonce expiry) and signature verification are the caller's responsibility.
- *
- * <p>chainId must be exactly one of: mainnet, devnet, testnet. All other values
- * are rejected.
+ * Parses the SIWS (Sign-In With Solana) message string.
+ * Supports standard SIWS formats, including optional fields (Not Before, Request ID,
+ * Resources) and statement blocks.
  */
 public final class SiwsMessageParser {
 
@@ -33,8 +27,7 @@ public final class SiwsMessageParser {
     /**
      * Parses a SIWS message string into a {@link SiwsMessage}.
      *
-     * @throws IllegalArgumentException if the message does not exactly match
-     *                                  the expected 10-line layout, or if chainId
+     * @throws IllegalArgumentException if the message format is invalid, or if chainId
      *                                  is not one of {mainnet, devnet, testnet}
      */
     public static SiwsMessage parse(String message) {
@@ -43,9 +36,8 @@ public final class SiwsMessageParser {
         }
 
         String[] lines = message.split("\n", -1);
-        if (lines.length != 10) {
-            throw new IllegalArgumentException(
-                    "expected 10 lines, got " + lines.length);
+        if (lines.length < 10) {
+            throw new IllegalArgumentException("expected at least 10 lines, got " + lines.length);
         }
 
         String domain = parseDomain(lines[0]);
@@ -54,15 +46,48 @@ public final class SiwsMessageParser {
             throw new IllegalArgumentException("line 1 (address) must not be blank");
         }
 
-        requireBlankLine(lines[2], 2);
-        requireBlankLine(lines[3], 3);
+        String uri = null;
+        String version = null;
+        String chainId = null;
+        String nonce = null;
+        Instant issuedAt = null;
+        Instant expiresAt = null;
 
-        String uri = extractField(lines[4], PREFIX_URI, 4);
-        String version = extractField(lines[5], PREFIX_VERSION, 5);
-        String chainId = extractAndValidateCluster(lines[6]);
-        String nonce = extractField(lines[7], PREFIX_NONCE, 7);
-        Instant issuedAt = parseInstant(lines[8], PREFIX_ISSUED_AT, 8);
-        Instant expiresAt = parseInstant(lines[9], PREFIX_EXPIRATION, 9);
+        for (int i = 2; i < lines.length; i++) {
+            String line = lines[i];
+            if (line.startsWith(PREFIX_URI)) {
+                uri = extractField(line, PREFIX_URI, i);
+            } else if (line.startsWith(PREFIX_VERSION)) {
+                version = extractField(line, PREFIX_VERSION, i);
+            } else if (line.startsWith(PREFIX_CHAIN_ID)) {
+                chainId = extractAndValidateCluster(line, i);
+            } else if (line.startsWith(PREFIX_NONCE)) {
+                nonce = extractField(line, PREFIX_NONCE, i);
+            } else if (line.startsWith(PREFIX_ISSUED_AT)) {
+                issuedAt = parseInstant(line, PREFIX_ISSUED_AT, i);
+            } else if (line.startsWith(PREFIX_EXPIRATION)) {
+                expiresAt = parseInstant(line, PREFIX_EXPIRATION, i);
+            }
+        }
+
+        if (uri == null) {
+            throw new IllegalArgumentException("URI: field is missing");
+        }
+        if (version == null) {
+            throw new IllegalArgumentException("Version: field is missing");
+        }
+        if (chainId == null) {
+            throw new IllegalArgumentException("Chain ID: field is missing");
+        }
+        if (nonce == null) {
+            throw new IllegalArgumentException("Nonce: field is missing");
+        }
+        if (issuedAt == null) {
+            throw new IllegalArgumentException("Issued At: field is missing");
+        }
+        if (expiresAt == null) {
+            throw new IllegalArgumentException("Expiration Time: field is missing");
+        }
 
         return new SiwsMessage(domain, address, uri, version, chainId, nonce, issuedAt, expiresAt);
     }
@@ -79,13 +104,6 @@ public final class SiwsMessageParser {
         return domain;
     }
 
-    private static void requireBlankLine(String line, int index) {
-        if (!line.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "line " + index + " must be blank, got: \"" + line + "\"");
-        }
-    }
-
     private static String extractField(String line, String prefix, int index) {
         if (!line.startsWith(prefix)) {
             throw new IllegalArgumentException(
@@ -99,11 +117,11 @@ public final class SiwsMessageParser {
         return value;
     }
 
-    private static String extractAndValidateCluster(String line) {
-        String cluster = extractField(line, PREFIX_CHAIN_ID, 6);
+    private static String extractAndValidateCluster(String line, int index) {
+        String cluster = extractField(line, PREFIX_CHAIN_ID, index);
         if (!VALID_CLUSTER_IDS.contains(cluster)) {
             throw new IllegalArgumentException(
-                    "line 6 Chain ID must be one of {mainnet, devnet, testnet}, got: \"" + cluster + "\"");
+                    "line " + index + " Chain ID must be one of {mainnet, devnet, testnet}, got: \"" + cluster + "\"");
         }
         return cluster;
     }

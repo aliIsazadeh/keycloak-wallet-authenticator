@@ -253,6 +253,70 @@ class VerifyAndAuthenticateTest {
                 .hasMessageContaining("signer mismatch");
     }
 
+    @Test
+    void execute_addressMismatch_throwsVerificationException() {
+        Challenge c = defaultChallenge();
+        store.store(c);
+
+        // Message claims other address, but challenge is for c.account().address()
+        String otherAddress = "0x1111111111111111111111111111111111111111";
+        CaipAccountId otherAccount = CaipAccountId.of(Namespace.EIP155, CHAIN_ID, otherAddress);
+        Challenge otherChallenge = challenge(otherAccount, NONCE, POLICY.domain(), POLICY.uri());
+        String msg = SiweMessageFactory.create(otherChallenge);
+
+        assertThatThrownBy(() -> useCase(returning(otherAddress)).execute(msg, "sig"))
+                .isInstanceOf(VerificationException.class)
+                .hasMessageContaining("address mismatch");
+    }
+
+    @Test
+    void execute_solanaAddressMismatch_throwsVerificationException() {
+        Challenge c = challenge(SOL_ACCOUNT, NONCE, POLICY.domain(), POLICY.uri());
+        store.store(c);
+
+        String otherSolAddress = "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z";
+        CaipAccountId otherAccount = CaipAccountId.of(Namespace.SOLANA, SOL_GENESIS, otherSolAddress);
+        Challenge otherChallenge = challenge(otherAccount, NONCE, POLICY.domain(), POLICY.uri());
+        String msg = SiwsMessageFactory.create(otherChallenge);
+
+        assertThatThrownBy(() -> useCase(returning(otherSolAddress)).execute(msg, "sig"))
+                .isInstanceOf(VerificationException.class)
+                .hasMessageContaining("address mismatch");
+    }
+
+    @Test
+    void execute_namespaceMismatch_throwsVerificationException() {
+        Challenge c = defaultChallenge();
+        store.store(c);
+
+        Challenge solChallenge = challenge(SOL_ACCOUNT, NONCE, POLICY.domain(), POLICY.uri());
+        String msg = SiwsMessageFactory.create(solChallenge);
+
+        assertThatThrownBy(() -> useCase(returning(SOL_ADDRESS)).execute(msg, "sig"))
+                .isInstanceOf(VerificationException.class)
+                .hasMessageContaining("namespace mismatch");
+    }
+
+    @Test
+    void execute_clockSkewTolerance_allowsFutureIssuedAt() throws VerificationException {
+        store.store(defaultChallenge());
+        Challenge c = challengeWithTimestamps(NONCE, FIXED_NOW.plusSeconds(30), FIXED_NOW.plus(Duration.ofMinutes(5)));
+        String msg = SiweMessageFactory.create(c);
+
+        AuthResult result = useCase(returning(ADDRESS)).execute(msg, "sig");
+        assertThat(result.token()).isNotBlank();
+    }
+
+    @Test
+    void execute_clockSkewTolerance_allowsPastExpiresAt() throws VerificationException {
+        store.store(defaultChallenge());
+        Challenge c = challengeWithTimestamps(NONCE, FIXED_NOW.minus(Duration.ofMinutes(4)), FIXED_NOW.minusSeconds(15));
+        String msg = SiweMessageFactory.create(c);
+
+        AuthResult result = useCase(returning(ADDRESS)).execute(msg, "sig");
+        assertThat(result.token()).isNotBlank();
+    }
+
     // ── Solana Namespace Tests ───────────────────────────────────────────────
 
     @Test

@@ -52,7 +52,7 @@ class VerifyControllerTest {
 
     @Test
     void validRequest_returns200WithTokenAndExpiry() throws Exception {
-        when(verifyAndAuthenticate.execute(any(), any())).thenReturn(STUB_RESULT);
+        when(verifyAndAuthenticate.execute(any(), any(), any(), any())).thenReturn(STUB_RESULT);
 
         mvc.perform(post("/v1/auth/verify")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -69,7 +69,7 @@ class VerifyControllerTest {
 
     @Test
     void verificationException_returns401() throws Exception {
-        when(verifyAndAuthenticate.execute(any(), any()))
+        when(verifyAndAuthenticate.execute(any(), any(), any(), any()))
                 .thenThrow(new VerificationException("nonce missing, expired, or already used"));
 
         mvc.perform(post("/v1/auth/verify")

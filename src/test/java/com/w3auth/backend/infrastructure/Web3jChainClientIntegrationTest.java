@@ -232,8 +232,6 @@ class Web3jChainClientIntegrationTest {
                         "0x1626ba7e00000000000000000000000000000000000000000000000000000000");
     }
 
-    // TODO(commit 2): counterfactual wrapped-sig test via Artifact B (CREATE2 factory fixture)
-
     @Test
     void deployless_validEoaSignature_returnsTrue() {
         byte[] message = "hello deployless".getBytes(StandardCharsets.UTF_8);

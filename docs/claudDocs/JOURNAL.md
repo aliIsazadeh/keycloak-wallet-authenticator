@@ -1,3 +1,6 @@
+> [!WARNING]
+> This document is DEPRECATED. Please refer to the corresponding ANTIGRAVITY documents in the root and under docs/ instead. Do not modify this legacy file.
+
 # Project Journal — Wallet Authentication Backend
 
 ## How this journal is maintained

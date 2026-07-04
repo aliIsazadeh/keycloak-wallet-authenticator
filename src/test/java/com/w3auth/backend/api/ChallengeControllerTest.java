@@ -18,7 +18,9 @@ import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
+import com.w3auth.backend.challenge.RateLimitException;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -28,6 +30,9 @@ class ChallengeControllerTest {
 
     @Mock
     RequestChallenge requestChallenge;
+
+    @Mock
+    com.w3auth.backend.challenge.RateLimiter rateLimiter;
 
     @InjectMocks
     ChallengeController controller;
@@ -100,5 +105,19 @@ class ChallengeControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").isString());
+    }
+
+    @Test
+    void rateLimitExceeded_returns429TooManyRequests() throws Exception {
+        doThrow(new RateLimitException("Rate limit exceeded"))
+                .when(rateLimiter).checkLimit(any(), any());
+
+        mvc.perform(post("/v1/auth/challenge")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"accountId":"eip155:1:0xabc1234567890abc1234567890abc12345678901"}
+                                """))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error").value("Rate limit exceeded"));
     }
 }

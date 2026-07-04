@@ -3,6 +3,7 @@ package com.w3auth.backend.api;
 import com.w3auth.backend.usecase.AuthResult;
 import com.w3auth.backend.usecase.VerifyAndAuthenticate;
 import com.w3auth.backend.verification.VerificationException;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,8 +21,10 @@ class VerifyController {
     }
 
     @PostMapping("/verify")
-    VerifyResponse verify(@Valid @RequestBody VerifyRequest request) throws VerificationException {
-        AuthResult result = verifyAndAuthenticate.execute(request.message(), request.signature());
+    VerifyResponse verify(@Valid @RequestBody VerifyRequest request, HttpServletRequest servletRequest) throws VerificationException {
+        String ip = servletRequest.getRemoteAddr();
+        String userAgent = servletRequest.getHeader("User-Agent");
+        AuthResult result = verifyAndAuthenticate.execute(request.message(), request.signature(), ip, userAgent);
         return new VerifyResponse(result.token(), result.refreshToken(), result.expiresAt());
     }
 }

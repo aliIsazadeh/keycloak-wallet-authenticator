@@ -1,6 +1,7 @@
 package com.w3auth.backend.api;
 
 import com.w3auth.backend.usecase.Logout;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,7 +22,9 @@ class LogoutController {
 
     @PostMapping("/logout")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    void logout(@Valid @RequestBody LogoutRequest request) {
-        logout.execute(request.refreshToken());
+    void logout(@Valid @RequestBody LogoutRequest request, HttpServletRequest servletRequest) {
+        String ip = servletRequest.getRemoteAddr();
+        String userAgent = servletRequest.getHeader("User-Agent");
+        logout.execute(request.refreshToken(), ip, userAgent);
     }
 }

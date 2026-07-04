@@ -12,11 +12,9 @@ import com.w3auth.backend.session.JwtService;
 import com.w3auth.backend.session.RefreshTokenStore;
 import com.w3auth.backend.session.TokenGrant;
 import com.w3auth.backend.verification.SignatureVerifier;
-import com.w3auth.backend.verification.SiweMessage;
-import com.w3auth.backend.verification.SiweMessageParser;
-import com.w3auth.backend.verification.SiwsMessage;
-import com.w3auth.backend.verification.SiwsMessageParser;
 import com.w3auth.backend.verification.AuthMessage;
+import com.w3auth.backend.verification.SiweMessageParser;
+import com.w3auth.backend.verification.SiwsMessageParser;
 import com.w3auth.backend.verification.VerificationException;
 import com.w3auth.backend.verification.VerificationRequest;
 import com.w3auth.backend.verification.VerifiedIdentity;
@@ -41,12 +39,26 @@ public class VerifyAndAuthenticate {
     private final RefreshTokenStore refreshTokenStore;
     private final JwtService jwtService;
     private final Clock clock;
+    private final AuthEventStore authEventStore;
 
+    /**
+     * Backward-compatible constructor for testing.
+     */
     public VerifyAndAuthenticate(ChallengeStore challengeStore, ChallengePolicy policy,
                                  SignatureVerifier signatureVerifier,
                                  WalletIdentityStore identityStore,
                                  RefreshTokenStore refreshTokenStore,
                                  JwtService jwtService, Clock clock) {
+        this(challengeStore, policy, signatureVerifier, identityStore, refreshTokenStore, jwtService, clock,
+                (id, type, ip, ua, details, ts) -> {});
+    }
+
+    public VerifyAndAuthenticate(ChallengeStore challengeStore, ChallengePolicy policy,
+                                 SignatureVerifier signatureVerifier,
+                                 WalletIdentityStore identityStore,
+                                 RefreshTokenStore refreshTokenStore,
+                                 JwtService jwtService, Clock clock,
+                                 AuthEventStore authEventStore) {
         this.challengeStore = challengeStore;
         this.policy = policy;
         this.signatureVerifier = signatureVerifier;
@@ -54,6 +66,14 @@ public class VerifyAndAuthenticate {
         this.refreshTokenStore = refreshTokenStore;
         this.jwtService = jwtService;
         this.clock = clock;
+        this.authEventStore = authEventStore;
+    }
+
+    /**
+     * Backward-compatible execute method signature.
+     */
+    public AuthResult execute(String rawMessage, String signature) throws VerificationException {
+        return execute(rawMessage, signature, null, null);
     }
 
     /**
@@ -61,12 +81,24 @@ public class VerifyAndAuthenticate {
      *
      * @param rawMessage the plaintext message exactly as presented for signing
      * @param signature  the encoded signature from the wallet
+     * @param ipAddress  the client's IP address (for audit logs)
+     * @param userAgent  the client's User-Agent string (for audit logs)
      * @return an {@link AuthResult} containing the access token and its expiry
      * @throws VerificationException for any failure: malformed message, nonce
      *         missing/expired/reused, field mismatch, invalid signature, or
      *         signer-address mismatch
      */
-    public AuthResult execute(String rawMessage, String signature) throws VerificationException {
+    public AuthResult execute(String rawMessage, String signature, String ipAddress, String userAgent) throws VerificationException {
+        Instant now = clock.instant();
+        try {
+            return executeInternal(rawMessage, signature, ipAddress, userAgent, now);
+        } catch (Exception e) {
+            authEventStore.logEvent(null, "LOGIN_FAILED", ipAddress, userAgent, e.getMessage(), now);
+            throw e;
+        }
+    }
+
+    private AuthResult executeInternal(String rawMessage, String signature, String ipAddress, String userAgent, Instant now) throws VerificationException {
         // Step 1: parse the message dynamically — fail fast before touching the nonce store
         Namespace namespace;
         try {
@@ -116,10 +148,12 @@ public class VerifyAndAuthenticate {
         WalletIdentity identity = identityStore.upsertOnLogin(account);
 
         // Step 7: issue access JWT and first refresh token of a new family.
-        Instant issuedAt = clock.instant();
-        String token = jwtService.issue(account.identityKey(), issuedAt);
+        String token = jwtService.issue(account.identityKey(), now);
         TokenGrant grant = refreshTokenStore.issue(identity.id(), UUID.randomUUID());
-        return new AuthResult(token, grant.rawToken(), issuedAt.plus(jwtService.ttl()));
+
+        authEventStore.logEvent(identity.id(), "LOGIN_SUCCESS", ipAddress, userAgent, "Account: " + account, now);
+
+        return new AuthResult(token, grant.rawToken(), now.plus(jwtService.ttl()));
     }
 
     private static Namespace detectNamespace(String rawMessage) {
@@ -150,6 +184,19 @@ public class VerifyAndAuthenticate {
             throw new VerificationException("unsupported " + type + " version: '" + parsed.version() + "'");
         }
 
+        // Security check: nonce must be bound to address and namespace
+        if (parsed.namespace() != challenge.account().namespace()) {
+            throw new VerificationException("namespace mismatch: expected '" + challenge.account().namespace()
+                    + "', got '" + parsed.namespace() + "'");
+        }
+        boolean addressMatches = (challenge.account().namespace() == Namespace.SOLANA)
+                ? parsed.address().equals(challenge.account().address())
+                : parsed.address().equalsIgnoreCase(challenge.account().address());
+        if (!addressMatches) {
+            throw new VerificationException("address mismatch: expected '" + challenge.account().address()
+                    + "', got '" + parsed.address() + "'");
+        }
+
         String expectedChainId = challenge.chainId();
         String actualChainId = parsed.chainId();
         if (parsed.namespace() == Namespace.SOLANA) {
@@ -169,10 +216,14 @@ public class VerifyAndAuthenticate {
         if (!parsed.nonce().equals(challenge.nonce())) {
             throw new VerificationException("nonce integrity error: store returned wrong challenge");
         }
-        if (parsed.issuedAt().isAfter(clock.instant())) {
+
+        // Clock-skew tolerance check
+        Instant now = clock.instant();
+        java.time.Duration skew = policy.clockSkewTolerance();
+        if (parsed.issuedAt().isAfter(now.plus(skew))) {
             throw new VerificationException("issuedAt is in the future");
         }
-        if (!clock.instant().isBefore(parsed.expiresAt())) {
+        if (!now.minus(skew).isBefore(parsed.expiresAt())) {
             throw new VerificationException("message expired per its own Expiration Time");
         }
     }

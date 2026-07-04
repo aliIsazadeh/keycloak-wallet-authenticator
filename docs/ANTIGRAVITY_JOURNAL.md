@@ -13,7 +13,7 @@
 
 ### What this backend does
 
-This backend proves that a client controls the private key of a crypto wallet, then issues a login session. Its defining property is that it is **protocol-driven, not SDK-driven**: every wallet client — Reown AppKit, MetaMask, raw WalletConnect, or anything built later — reduces to the same three inputs: a `message`, a `signature`, and a claimed `accountId`. No wallet vendor's code or concepts appear anywhere in this backend. The protocol used for V1 is SIWE (EIP-4361), restricted to EVM chains and EOA (normal) wallets.
+This backend proves that a client controls the private key of a crypto wallet, then issues a login session. Its defining property is that it is **protocol-driven, not SDK-driven**: every wallet client — Reown AppKit, MetaMask, raw WalletConnect, or anything built later — reduces to the same three inputs: a `message`, a `signature`, and a claimed `accountId`. No wallet vendor's code or concepts appear anywhere in this backend. The protocol used for V1 includes SIWE (EIP-4361) and SIWS (Solana Sign-In), supporting both EVM chains (EOA and EIP-1271/6492 smart contracts) and Solana.
 
 ---
 
@@ -59,9 +59,9 @@ flowchart LR
 | **M2** | Refresh tokens; rotation; reuse detection (family revocation); logout; JWT filter + protected endpoints | ✅ |
 | **M3a** | EIP-1271 deployed smart-contract wallets; `ChainClient` port + `Web3jChainClient` adapter; `ContractAwareSignatureVerifier` dispatcher; RPC dependency introduced single-module | ✅ |
 | **M3b** | EIP-6492 counterfactual wallets; `Eip6492Envelope` well-formedness gate; `isValidSignatureDeployless` via deployless `eth_call` to `ValidateSigOffchain` universal validator | ✅ |
-| **M4** | Second namespace (Solana / Ed25519) to prove and harden the abstraction; only then a real protocol registry | ⬜ unscoped |
+| **M4** | Second namespace (Solana / Ed25519) to prove and harden the abstraction; only then a real protocol registry | ✅ |
 
-Cross-cutting from M1 onward: rate limiting, audit logging, Testcontainers integration tests for the full auth flow.
+Cross-cutting: rate limiting on challenge requests, audit logging of auth events in Postgres, and Testcontainers integration tests for the full auth flow. ✅
 
 ---
 
