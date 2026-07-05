@@ -36,17 +36,24 @@ flowchart LR
 
 ### Package map
 
+#### Module `w3auth-core` (Framework-free Java library)
+
 | Package          | Job                                                                 | Milestone    |
 |------------------|---------------------------------------------------------------------|--------------|
 | `identity`       | `CaipAccountId`, `Namespace` — the wallet identity model            | M0 ✅        |
-| `challenge`      | `Challenge`, `Nonce`, `ChallengeStore` (port), `ChallengePolicy`, `SiweMessageFactory` | M0 ✅ |
-| `usecase`        | `RequestChallenge` (M0), `VerifyAndAuthenticate` (M1), `RefreshSession` + `Logout` (M2) | M1 partial ✅ |
-| `infrastructure` | Redis adapters (`RedisChallengeStore`), JPA entities + repos, Flyway migrations, `JwtConfiguration`, `Web3jChainClient` (RPC adapter) | M3 ✅ |
-| `config`         | Composition root — wires use cases to infrastructure, supplies `Clock`, `ChallengePolicy`, `JwtService` beans | M1 ✅ |
-| `api`            | REST controllers, request/response DTOs                             | M2 ✅ |
-| `verification`   | `SignatureVerifier` (interface), `EthereumSignatureVerifier` (EOA), `ContractAwareSignatureVerifier` (dispatcher), `ChainClient` (port), `Eip6492Envelope` (6492 gate), SIWE parser | M3 ✅ |
+| `challenge`      | `Challenge`, `Nonce`, `ChallengeStore` (port), `ChallengePolicy`, `SiweMessageFactory`/`SiwsMessageFactory` | M0 ✅ |
+| `verification`   | `SignatureVerifier` (interface), `EthereumSignatureVerifier` (EOA), `ContractAwareSignatureVerifier` (dispatcher), `ChainClient` (port), `Eip6492Envelope` (6492 gate), Solana Ed25519 verifier, SIWE/SIWS message parsers | M3 ✅ |
 | `session`        | `JwtPolicy`, `JwtService` (access JWT); `RefreshTokenStore` (port), refresh token logic | M2 ✅ |
-| `security`       | Spring Security config; `JwtAuthenticationFilter`                   | M2 ✅ |
+| `usecase`        | Core use cases (`RequestChallenge`, `VerifyAndAuthenticate`, `RefreshSession`, `Logout`) | M1 ✅ |
+
+#### Module `w3auth-standalone-api` (Spring Boot REST Application)
+
+| Package          | Job                                                                 | Milestone    |
+|------------------|---------------------------------------------------------------------|--------------|
+| `infrastructure` | Redis adapters, JPA entities & repos, Flyway migrations, `Web3jChainClient` (RPC integration) | M3 ✅ |
+| `config`         | Spring Composition Root — wires use cases and binds beans           | M1 ✅ |
+| `security`       | Spring Security config and `JwtAuthenticationFilter`                | M2 ✅ |
+| `api`            | REST controllers (`ChallengeController`, `VerifyController`, `RefreshController`, `LogoutController`, `MeController`) and DTOs | M2 ✅ |
 
 ---
 
@@ -60,12 +67,31 @@ flowchart LR
 | **M3a** | EIP-1271 deployed smart-contract wallets; `ChainClient` port + `Web3jChainClient` adapter; `ContractAwareSignatureVerifier` dispatcher; RPC dependency introduced single-module | ✅ |
 | **M3b** | EIP-6492 counterfactual wallets; `Eip6492Envelope` well-formedness gate; `isValidSignatureDeployless` via deployless `eth_call` to `ValidateSigOffchain` universal validator | ✅ |
 | **M4** | Second namespace (Solana / Ed25519) to prove and harden the abstraction; only then a real protocol registry | ✅ |
+| **M5** | Refactor codebase to Multi-Module Gradle configuration using centralized Version Catalog (`libs.versions.toml`) to prepare for Keycloak plugin | ✅ |
 
 Cross-cutting: rate limiting on challenge requests, audit logging of auth events in Postgres, and Testcontainers integration tests for the full auth flow. ✅
 
 ---
 
 ## Part 2 — Step Log
+
+---
+
+## M5 · step 1 — Refactor to Multi-Module Gradle with Version Catalog (libs.versions.toml)   (commit a8801b0)
+
+**What:** Refactored the single Gradle module project into a clean Multi-Module Gradle configuration. Excluded Spring Boot/framework components from `w3auth-core` to make it a pure Java dependency, and centralized dependency coordinates via a new version catalog.
+
+*   Created [libs.versions.toml](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/gradle/libs.versions.toml) to manage dependencies and versions centrally.
+*   Refactored root [settings.gradle.kts](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/settings.gradle.kts) and [build.gradle.kts](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/build.gradle.kts) to act as multi-module coordinators, applying common toolchain (JDK 21) and testing options under `subprojects {}`.
+*   Created **`w3auth-core`** module containing core cryptographic, session, and use-case packages (`identity`, `challenge`, `verification`, `session`, `usecase`). Added explicit testing dependencies (`mockito-core`, `mockito-junit-jupiter`, `junit-platform-launcher`) and JWT test runtimes (`jjwt-impl`, `jjwt-jackson`) to ensure core unit tests run cleanly without Spring Boot.
+*   Created **`w3auth-standalone-api`** module containing Spring Boot API controllers, configuration mappings, infrastructure adapters, resources, database migrations, and Testcontainers-backed integration tests.
+*   Deleted the monolithic root-level `src` folder.
+
+**Why:** Decoupled our core signature verification logic from framework dependencies to support the future development of a Keycloak SPI plugin. By separating the core engine into its own module, the compiler now enforces package boundaries (meaning `w3auth-core` cannot accidentally import Spring or JPA). The use of Gradle Version Catalogs aligns the project with modern multi-module standards and DRY principles.
+
+**Learned:** Version Catalogs (`libs.versions.toml`) replace hyphenated library keys with dot accessors in Kotlin DSL scripts, which requires mapping to dotted structures (`libs.spring.boot.starter.data.jpa` instead of `-jpa`) to avoid syntax compilation traps. When separating core libraries, test runtimes must be explicitly declared (like JUnit platform launchers and Mockito) because they are no longer transitively provided by `spring-boot-starter-test`.
+
+**Open / next:** Build a custom Keycloak plugin (`w3auth-keycloak-plugin`) using `w3auth-core` as a dependency.
 
 ---
 
