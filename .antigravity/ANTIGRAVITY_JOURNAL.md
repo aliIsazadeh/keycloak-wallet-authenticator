@@ -77,6 +77,23 @@ Cross-cutting: rate limiting on challenge requests, audit logging of auth events
 
 ---
 
+## M5 · housekeeping — Line-Ending Normalization & Keycloak Config Hardening   (commit 64d7410)
+
+**What:** Fixed a critical cross-compatibility bug in SIWE/SIWS parsing to handle Windows-style carriage returns (`\r\n`) and hardened Keycloak configuration properties validation against empty values.
+
+*   Updated [SiweMessageParser](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/w3auth-core/src/main/java/com/w3auth/backend/verification/SiweMessageParser.java) and [SiwsMessageParser](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/w3auth-core/src/main/java/com/w3auth/backend/verification/SiwsMessageParser.java) to dynamically strip trailing `\r` from split lines, preventing validation errors for messages signed and submitted from Windows or Android devices.
+*   Updated `detectNamespace` in both [VerifyAndAuthenticate](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/w3auth-core/src/main/java/com/w3auth/backend/usecase/VerifyAndAuthenticate.java) and [W3AuthAuthenticator](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/w3auth-keycloak-plugin/src/main/java/com/w3auth/keycloak/W3AuthAuthenticator.java) to strip carriage returns from the first line before performing prefix checks.
+*   Introduced `getConfigValue` helper inside `W3AuthAuthenticator` to handle empty strings configured in Keycloak's administrator UI, falling back safely to defaults.
+*   Added a parser regression test `parse_messageWithCarriageReturns_parsesSuccessfully` to [SiweMessageParserTest](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/w3auth-core/src/test/java/com/w3auth/backend/verification/SiweMessageParserTest.java).
+
+**Why:** Stripping carriage returns from split lines rather than replacing them in the raw message string ensures that the message signature is verified against the exact bytes signed by the wallet (which may contain `\r\n`), while allowing our field validators (like domain, nonce, version) to execute clean comparisons without trailing carriage returns. Resolving this early prevents silent verification failures in heterogeneous client environments.
+
+**Learned:** Raw bytes signed by client wallets must never be altered (e.g. line ending conversion) prior to verification, as ecrecover/Ed25519 signatures are structurally bound to the exact payload bytes. Normalizing elements must only occur at the parser line array level.
+
+**Open / next:** Ready for production deployment validation.
+
+---
+
 ## M5 · step 2 — Keycloak Authenticator SPI Plugin   (commit 3bb372b)
 
 **What:** Implemented the custom Keycloak Authenticator plugin inside the new `w3auth-keycloak-plugin` sub-module, allowing users to log in directly to Keycloak using EVM (SIWE) and Solana (SIWS) wallet signatures. 
