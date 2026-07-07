@@ -77,6 +77,26 @@ Cross-cutting: rate limiting on challenge requests, audit logging of auth events
 
 ---
 
+## M5 · step 2 — Keycloak Authenticator SPI Plugin   (commit 3bb372b)
+
+**What:** Implemented the custom Keycloak Authenticator plugin inside the new `w3auth-keycloak-plugin` sub-module, allowing users to log in directly to Keycloak using EVM (SIWE) and Solana (SIWS) wallet signatures. 
+
+*   Created [W3AuthAuthenticator](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/w3auth-keycloak-plugin/src/main/java/com/w3auth/keycloak/W3AuthAuthenticator.java) implementing Keycloak's `Authenticator` SPI. It generates cryptographic nonces, saves them securely to Keycloak authentication flow notes, parses incoming SIWE/SIWS message payloads, verifies the wallet signature, and checks recovered signers.
+*   Implemented address-based identity federation: mapped Keycloak's username to the two-part `namespace:address` retrieved from `CaipAccountId.identityKey().toJwtSubject()` to ensure that changing chains (session context) does not bifurcate one wallet owner into multiple Keycloak identities.
+*   Created [W3AuthAuthenticatorFactory](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/w3auth-keycloak-plugin/src/main/java/com/w3auth/keycloak/W3AuthAuthenticatorFactory.java) to define SPI metadata and expose administrative configuration parameters (`expected-domain`, `expected-uri`, and optional `ethereum-rpc-url`).
+*   Created [HttpChainClient](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/w3auth-keycloak-plugin/src/main/java/com/w3auth/keycloak/HttpChainClient.java) to provide a zero-dependency, lightweight implementation of the core `ChainClient` interface using Java 21's native `HttpClient` and manual ABI encoding/decoding, preventing heavy transitive JAR dependencies from colliding on Keycloak's server classpath.
+*   Created [w3auth-login.ftl](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/w3auth-keycloak-plugin/src/main/resources/theme-resources/templates/w3auth-login.ftl) (FreeMarker login template) built with high-fidelity glassmorphism aesthetics, dark-theme layout, and embedded client-side provider connectors (`window.ethereum` and Phantom's `window.solana`).
+*   Created [W3AuthAuthenticatorTest](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/w3auth-keycloak-plugin/src/test/java/com/w3auth/keycloak/W3AuthAuthenticatorTest.java) covering flow challenges, successful provisioning, signature validation via hardcoded Hardhat test key signers, and domain/nonce verification failures.
+*   Registered the factory in `META-INF/services/org.keycloak.authentication.AuthenticatorFactory`.
+
+**Why:** Decoupling signature verification from external storage frameworks (like Spring or JPA) lets us directly integrate our wallet verifier engine inside standard IAM platforms like Keycloak. Writing a lightweight HTTP client for contract-aware signature verification (EIP-1271 and EIP-6492) avoids adding `web3j-core`'s heavy transitive tree (like RxJava/OkHttp) to the plugin, keeping Keycloak deployments clean and free of dependency hell.
+
+**Learned:** Keycloak's `compileOnly` dependencies must be explicitly duplicated as `testImplementation` in Gradle, because unit tests do not inherit the compilation-only classpath. When parsing mock SIWE messages in tests, we must strictly respect the 10-line formatting (omitting optional statement blocks) because the core verifier parses message segments by line indexing and throws under deviation.
+
+**Open / next:** Build deployment validation pipelines and support additional Non-EVM chains (like Cosmos or Bitcoin) using the generalized namespace routing model.
+
+---
+
 ## M5 · step 1 — Refactor to Multi-Module Gradle with Version Catalog (libs.versions.toml)   (commit a8801b0)
 
 **What:** Refactored the single Gradle module project into a clean Multi-Module Gradle configuration. Excluded Spring Boot/framework components from `w3auth-core` to make it a pure Java dependency, and centralized dependency coordinates via a new version catalog.
