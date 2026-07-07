@@ -115,4 +115,22 @@ class SiweMessageParserTest {
                 .isThrownBy(() -> SiweMessageParser.parse(corrupted))
                 .withMessageContaining("must be blank");
     }
+
+    @Test
+    void parse_messageWithCarriageReturns_parsesSuccessfully() {
+        String msgWithCr = "localhost wants you to sign in with your Ethereum account:\r\n" +
+                "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266\r\n" +
+                "\r\n" +
+                "\r\n" +
+                "URI: http://localhost:8080\r\n" +
+                "Version: 1\r\n" +
+                "Chain ID: 1\r\n" +
+                "Nonce: testNonce123456\r\n" +
+                "Issued At: 2026-06-15T12:00:00Z\r\n" +
+                "Expiration Time: 2026-06-15T12:05:00Z";
+        SiweMessage parsed = SiweMessageParser.parse(msgWithCr);
+        assertThat(parsed.domain()).isEqualTo("localhost");
+        assertThat(parsed.address()).isEqualTo("0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
+        assertThat(parsed.nonce()).isEqualTo("testNonce123456");
+    }
 }

@@ -34,8 +34,8 @@ public class W3AuthAuthenticator implements Authenticator {
 
         AuthenticatorConfigModel config = context.getAuthenticatorConfig();
         Map<String, String> configMap = config != null ? config.getConfig() : Map.of();
-        String expectedDomain = configMap.getOrDefault("expected-domain", "localhost");
-        String expectedUri = configMap.getOrDefault("expected-uri", "http://localhost:8080");
+        String expectedDomain = getConfigValue(configMap, "expected-domain", "localhost");
+        String expectedUri = getConfigValue(configMap, "expected-uri", "http://localhost:8080");
 
         Response challengeForm = context.form()
                 .setAttribute("nonce", nonce)
@@ -83,9 +83,9 @@ public class W3AuthAuthenticator implements Authenticator {
 
             AuthenticatorConfigModel config = context.getAuthenticatorConfig();
             Map<String, String> configMap = config != null ? config.getConfig() : Map.of();
-            String expectedDomain = configMap.getOrDefault("expected-domain", "localhost");
-            String expectedUri = configMap.getOrDefault("expected-uri", "http://localhost:8080");
-            String rpcUrl = configMap.get("ethereum-rpc-url");
+            String expectedDomain = getConfigValue(configMap, "expected-domain", "localhost");
+            String expectedUri = getConfigValue(configMap, "expected-uri", "http://localhost:8080");
+            String rpcUrl = getConfigValue(configMap, "ethereum-rpc-url", null);
 
             if (!expectedDomain.equals(parsed.domain())) {
                 throw new VerificationException("Domain mismatch: expected " + expectedDomain + " but got " + parsed.domain());
@@ -163,12 +163,20 @@ public class W3AuthAuthenticator implements Authenticator {
         }
         int firstNewLine = rawMessage.indexOf('\n');
         String firstLine = (firstNewLine == -1) ? rawMessage : rawMessage.substring(0, firstNewLine);
+        if (firstLine.endsWith("\r")) {
+            firstLine = firstLine.substring(0, firstLine.length() - 1);
+        }
         if (firstLine.endsWith(" wants you to sign in with your Ethereum account:")) {
             return Namespace.EIP155;
         } else if (firstLine.endsWith(" wants you to sign in with your Solana account:")) {
             return Namespace.SOLANA;
         }
         throw new IllegalArgumentException("Unknown or unsupported authentication message format");
+    }
+
+    private static String getConfigValue(Map<String, String> config, String key, String defaultValue) {
+        String val = config.get(key);
+        return (val == null || val.isBlank()) ? defaultValue : val.trim();
     }
 
     @Override

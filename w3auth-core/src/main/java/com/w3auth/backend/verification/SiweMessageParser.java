@@ -38,6 +38,11 @@ public final class SiweMessageParser {
         }
 
         String[] lines = message.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].endsWith("\r")) {
+                lines[i] = lines[i].substring(0, lines[i].length() - 1);
+            }
+        }
         if (lines.length != 10) {
             throw new IllegalArgumentException(
                     "expected 10 lines, got " + lines.length);

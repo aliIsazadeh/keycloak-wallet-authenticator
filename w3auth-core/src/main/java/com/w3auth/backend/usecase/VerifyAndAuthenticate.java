@@ -162,6 +162,9 @@ public class VerifyAndAuthenticate {
         }
         int firstNewLine = rawMessage.indexOf('\n');
         String firstLine = (firstNewLine == -1) ? rawMessage : rawMessage.substring(0, firstNewLine);
+        if (firstLine.endsWith("\r")) {
+            firstLine = firstLine.substring(0, firstLine.length() - 1);
+        }
         if (firstLine.endsWith(" wants you to sign in with your Ethereum account:")) {
             return Namespace.EIP155;
         } else if (firstLine.endsWith(" wants you to sign in with your Solana account:")) {
