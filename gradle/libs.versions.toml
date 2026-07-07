@@ -9,6 +9,7 @@ junit = "5.10.2"
 assertj = "3.25.3"
 mockito = "5.11.0"
 testcontainers = "1.20.1"
+keycloak = "25.0.2"
 
 [libraries]
 # Spring Boot Starters
@@ -47,6 +48,12 @@ assertj-core = { group = "org.assertj", name = "assertj-core", version.ref = "as
 mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mockito" }
 mockito-junit-jupiter = { group = "org.mockito", name = "mockito-junit-jupiter", version.ref = "mockito" }
 junit-platform-launcher = { group = "org.junit.platform", name = "junit-platform-launcher", version = "1.10.2" }
+
+# Keycloak SPI Dependencies
+keycloak-core = { group = "org.keycloak", name = "keycloak-core", version.ref = "keycloak" }
+keycloak-server-spi = { group = "org.keycloak", name = "keycloak-server-spi", version.ref = "keycloak" }
+keycloak-server-spi-private = { group = "org.keycloak", name = "keycloak-server-spi-private", version.ref = "keycloak" }
+keycloak-services = { group = "org.keycloak", name = "keycloak-services", version.ref = "keycloak" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }

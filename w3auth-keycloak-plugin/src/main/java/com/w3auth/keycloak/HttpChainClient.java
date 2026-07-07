@@ -1,0 +1,165 @@
+package com.w3auth.keycloak;
+
+import com.w3auth.backend.verification.ChainClient;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.HexFormat;
+
+/**
+ * A zero-dependency implementation of {@link ChainClient} for Keycloak.
+ * Uses Java 21's native {@link HttpClient} and manual ABI encoding to execute
+ * JSON-RPC requests against an Ethereum node.
+ */
+public final class HttpChainClient implements ChainClient {
+
+    // EIP-6492 universal validator bytecode (ValidateSigOffchain)
+    private static final String VALIDATOR_BYTECODE =
+            "608060405234801561000f575f5ffd5b50604051610cf1380380610cf183398101604081905261002e916100f4565b5f60405161003b906100d3565b604051809103905ff080158015610054573d5f5f3e3d5ffd5b5090505f816001600160a01b0316638f0684308686866040518463ffffffff1660e01b8152600401610088939291906101cb565b6020604051808303815f875af11580156100a4573d5f5f3e3d5ffd5b505050506040513d601f19601f820116820180604052508101906100c89190610216565b9050805f526001601ff35b610ab48061023d83390190565b634e487b7160e01b5f52604160045260245ffd5b5f5f5f60608486031215610106575f5ffd5b83516001600160a01b038116811461011c575f5ffd5b6020850151604086015191945092506001600160401b0381111561013e575f5ffd5b8401601f8101861361014e575f5ffd5b80516001600160401b03811115610167576101676100e0565b604051601f8201601f19908116603f011681016001600160401b0381118282101715610195576101956100e0565b6040528181528282016020018810156101ac575f5ffd5b8160208401602083015e5f602083830101528093505050509250925092565b60018060a01b0384168152826020820152606060408201525f82518060608401528060208501608085015e5f608082850101526080601f19601f830116840101915050949350505050565b5f60208284031215610226575f5ffd5b81518015158114610235575f5ffd5b939250505056fe6080604052348015600e575f5ffd5b50610a988061001c5f395ff3fe608060405234801561000f575f5ffd5b50610a988061001c5f395ff3fe608060405234801561000f575f5ffd5b506004361061003f575f3560e01c806376be4cea146100435780638f0684301461006a57806398ef1ed81461007d575b5f5ffd5b6100566100513660046106e9565b610090565b604051901515815260200160405180910390f35b610056610078366004610769565b610521565b61005661008b366004610769565b61059c565b5f6001600160a01b0387163b6060827f649264926492649264926492649264926492649264926492649264926492649288886100cd6020826107c1565b6100d9928b92906107e6565b6100e29161080d565b14905080156101bc575f606089828a6100fc6020826107c1565b92610109939291906107e6565b81019061011691906108c9565b955090925090508415806101275750865b156101b5575f5f836001600160a01b031683604051610146919061093f565b5f604051808303815f865af19150503d805f811461017f576040519150601f19603f3d011682016040523d82523d5f602084013e610184565b606091505b5091509150816101b25780604051639d0d6e2d60e01b81526004016101a99190610983565b60405180910390fd5b50505b50506101f5565b87878080601f0160208091040260200160405190810160405280939291908181526020018383808284375f920191909152509294505050505b808061020057505f83115b1561035f57604051630b135d3f60e11b81526001600160a01b038b1690631626ba7e90610233908c90869060040161099c565b602060405180830381865afa92505050801561026c575060408051601f3d908101601f19168201909252610269918101906109b4565b60015b6102e6573d808015610299576040519150601f19603f3d011682016040523d82523d5f602084013e61029e565b606091505b50851580156102ac57505f84115b156102cb576102c08b8b8b8b8b6001610090565b945050505050610517565b80604051636f2a959960e01b81526004016101a99190610983565b6001600160e01b03198116630b135d3f60e11b14801581610305575086155b801561031057505f85115b15610330576103248c8c8c8c8c6001610090565b95505050505050610517565b8415801561033b5750825b8015610345575087155b1561035357805f526001601ffd5b94506105179350505050565b604187146103d55760405162461bcd60e51b815260206004820152603a60248201527f5369676e617475726556616c696461746f72237265636f7665725369676e657260448201527f3a20696e76616c6964207369676e6174757265206c656e67746800000000000060648201526084016101a9565b5f6103e36020828a8c6107e6565b6103ec9161080d565b90505f6103fd604060208b8d6107e6565b6104069161080d565b90505f8a8a604081811061041c5761041c6109db565b919091013560f81c915050601b811480159061043c57508060ff16601c14155b1561049f5760405162461bcd60e51b815260206004820152602d60248201527f5369676e617475726556616c696461746f723a20696e76616c6964207369676e60448201526c617475726520762076616c756560981b60648201526084016101a9565b604080515f8152602081018083528e905260ff83169181019190915260608101849052608081018390526001600160a01b038e169060019060a0016020604051602081039080840390855afa1580156104fa573d5f5f3e3d5ffd5b505050602060405103516001600160a01b03161496505050505050505b9695505050505050565b604051633b5f267560e11b81525f9030906376be4cea9061055190889088908890889060019089906004016109ef565b6020604051808303815f875af115801561056d573d5f5f3e3d5ffd5b505050506040513d601f19601f820116820180604052508101906105919190610a47565b90505b949350505050565b604051633b5f267560e11b81525f9030906376be4cea906105cb908890889088908890889081906004016109ef565b6020604051808303815f875af1925050508015610605575060408051601f3d908101601f1916820190925261060291810190610a47565b60015b610679573d808015610632576040519150601f19603f3d011682016040523d82523d5f602084013e610637565b606091505b508051600181900361067557815f81518110610655576106556109db565b6020910101516001600160f81b031916600160f81b149250610594915050565b8082fd5b9050610594565b6001600160a01b0381168114610694575f5ffd5b50565b5f5f83601f8401126106a7575f5ffd5b50813567ffffffffffffffff8111156106be575f5ffd5b6020830191508360208285010111156106d5575f5ffd5b9250929050565b8015158114610694575f5ffd5b5f5f5f5f5f5f60a087890312156106fe575f5ffd5b863561070981610680565b955060208701359450604087013567ffffffffffffffff81111561072b575f5ffd5b61073789828a01610697565b909550935050606087013561074b816106dc565b9150608087013561075b816106dc565b809150509295509295509295565b5f5f5f5f6060858703121561077c575f5ffd5b843561078781610680565b935060208501359250604085013567ffffffffffffffff8111156107a9575f5ffd5b6107b587828801610697565b95989497509550505050565b818103818111156107e057634e487b7160e01b5f52601160045260245ffd5b92915050565b5f5f858511156107f4575f5ffd5b83861115610800575f5ffd5b5050820193919092039150565b803560208310156107e0575f19602084900360031b1b1692915050565b634e487b7160e01b5f52604160045260245ffd5b5f82601f83011261084d575f5ffd5b813567ffffffffffffffff8111156108675761086761082a565b604051601f8201601f19908116603f0116810167ffffffffffffffff811182821017156108965761089661082a565b6040528181528382016020018510156108ad575f5ffd5b816020850160208301375f918101602001919091529392505050565b5f5f5f606084860312156108db575f5ffd5b83356108e681610680565b9250602084013567ffffffffffffffff811115610901575f5ffd5b61090d8682870161083e565b925050604084013567ffffffffffffffff811115610929575f5ffd5b6109358682870161083e565b9150509250925092565b5f82518060208501845e5f920191825250919050565b5f81518084528060208401602086015e5f602082860101526020601f19601f83011685010191505092915050565b602081525f6109956020830184610955565b9392505050565b828152604060208201525f6105946040830184610955565b5f602082840312156109c4575f5ffd5b81516001600160e01b031981168114610995575f5ffd5b634e487b7160e01b5f52603260045260245ffd5b6001600160a01b03871681526020810186905260a0604082018190528101849052838560c08301375f60c085830181019190915292151560608201529015156080820152601f909201601f1916909101019392505050565b5f60208284031215610a57575f5ffd5b8151610995816106dc56fea2646970667358221220e477fe749e5d606d2f811e5a72164b07f888ce1cdb439b653eb0a8ecdaf034a464736f6c634300081c0033";
+
+    private final String rpcUrl;
+    private final HttpClient client;
+
+    public HttpChainClient(String rpcUrl) {
+        this.rpcUrl = rpcUrl;
+        this.client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .build();
+    }
+
+    @Override
+    public String getCode(String address) {
+        String jsonRequest = String.format(
+                "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getCode\",\"params\":[\"%s\",\"latest\"],\"id\":1}",
+                address
+        );
+        try {
+            String jsonResponse = post(jsonRequest);
+            return extractResult(jsonResponse);
+        } catch (Exception e) {
+            throw new RuntimeException("eth_getCode failed for " + address, e);
+        }
+    }
+
+    @Override
+    public boolean isValidErc1271Signature(String contractAddress, byte[] hash, byte[] signature) {
+        String data = buildCallData(hash, signature);
+        String jsonRequest = String.format(
+                "{\"jsonrpc\":\"2.0\",\"method\":\"eth_call\",\"params\":[{\"to\":\"%s\",\"data\":\"%s\"},\"latest\"],\"id\":1}",
+                contractAddress, data
+        );
+        try {
+            String jsonResponse = post(jsonRequest);
+            String result = extractResult(jsonResponse);
+            return result != null && result.toLowerCase().startsWith("0x1626ba7e");
+        } catch (Exception e) {
+            throw new RuntimeException("eth_call EIP-1271 failed for " + contractAddress, e);
+        }
+    }
+
+    @Override
+    public boolean isValidSignatureDeployless(String signer, byte[] hash, byte[] signature) {
+        // Encode the constructor arguments manually:
+        // arg1: Address signer (left-padded to 32 bytes)
+        // arg2: Bytes32 hash
+        // arg3: DynamicBytes signature (offset, length, padded data)
+        String signerPadded = String.format("%64s", signer.startsWith("0x") ? signer.substring(2) : signer)
+                .replace(' ', '0');
+        
+        HexFormat hex = HexFormat.of();
+        String hashHex = hex.formatHex(hash);
+        
+        // Offset for signature is 96 bytes (0x60)
+        String sigOffsetHex = String.format("%064x", 96L);
+        
+        // Length of signature
+        String sigLengthHex = String.format("%064x", (long) signature.length);
+        
+        // Signature bytes padded to 32-byte boundary
+        int sigPaddedLen = ((signature.length + 31) / 32) * 32;
+        byte[] sigPadded = new byte[sigPaddedLen];
+        System.arraycopy(signature, 0, sigPadded, 0, signature.length);
+        String sigDataHex = hex.formatHex(sigPadded);
+        
+        String encodedArgs = signerPadded + hashHex + sigOffsetHex + sigLengthHex + sigDataHex;
+        String callData = "0x" + VALIDATOR_BYTECODE + encodedArgs;
+
+        String jsonRequest = String.format(
+                "{\"jsonrpc\":\"2.0\",\"method\":\"eth_call\",\"params\":[{\"to\":null,\"data\":\"%s\"},\"latest\"],\"id\":1}",
+                callData
+        );
+        try {
+            String jsonResponse = post(jsonRequest);
+            String result = extractResult(jsonResponse);
+            if (result == null || result.isEmpty() || result.equalsIgnoreCase("0x")) {
+                throw new RuntimeException("deployless eth_call returned empty output");
+            }
+            String resultHex = result.startsWith("0x") || result.startsWith("0X") ? result.substring(2) : result;
+            if (resultHex.equalsIgnoreCase("01") || resultHex.endsWith("01")) {
+                return true;
+            } else if (resultHex.equalsIgnoreCase("00") || resultHex.endsWith("00")) {
+                return false;
+            } else {
+                throw new RuntimeException("deployless eth_call returned unexpected output: " + result);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("deployless EIP-6492 call failed", e);
+        }
+    }
+
+    private String post(String jsonBody) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(rpcUrl))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new RuntimeException("HTTP JSON-RPC error status: " + response.statusCode() + " body: " + response.body());
+        }
+        return response.body();
+    }
+
+    private String extractResult(String json) {
+        int resultIdx = json.indexOf("\"result\"");
+        if (resultIdx == -1) {
+            // Check if there is an error field in the JSON
+            int errorIdx = json.indexOf("\"error\"");
+            if (errorIdx != -1) {
+                throw new RuntimeException("JSON-RPC returned error: " + json);
+            }
+            throw new RuntimeException("RPC response missing 'result' field: " + json);
+        }
+        int colonIdx = json.indexOf(':', resultIdx);
+        int quoteStart = json.indexOf('"', colonIdx);
+        if (quoteStart == -1) {
+            // Check for unquoted null or boolean
+            int nextComma = json.indexOf(',', colonIdx);
+            int nextBracket = json.indexOf('}', colonIdx);
+            int end = Math.min(nextComma == -1 ? Integer.MAX_VALUE : nextComma, nextBracket == -1 ? Integer.MAX_VALUE : nextBracket);
+            return json.substring(colonIdx + 1, end).trim();
+        }
+        int quoteEnd = json.indexOf('"', quoteStart + 1);
+        return json.substring(quoteStart + 1, quoteEnd);
+    }
+
+    private static String buildCallData(byte[] hash, byte[] signature) {
+        HexFormat hex = HexFormat.of();
+
+        byte[] hashPadded = new byte[32];
+        System.arraycopy(hash, 0, hashPadded, 0, Math.min(hash.length, 32));
+
+        int sigPaddedLen = ((signature.length + 31) / 32) * 32;
+        byte[] sigPadded = new byte[sigPaddedLen];
+        System.arraycopy(signature, 0, sigPadded, 0, signature.length);
+
+        return "0x1626ba7e"
+                + hex.formatHex(hashPadded)
+                + String.format("%064x", 64L)
+                + String.format("%064x", (long) signature.length)
+                + hex.formatHex(sigPadded);
+    }
+}
