@@ -54,6 +54,7 @@ keycloak-core = { group = "org.keycloak", name = "keycloak-core", version.ref = 
 keycloak-server-spi = { group = "org.keycloak", name = "keycloak-server-spi", version.ref = "keycloak" }
 keycloak-server-spi-private = { group = "org.keycloak", name = "keycloak-server-spi-private", version.ref = "keycloak" }
 keycloak-services = { group = "org.keycloak", name = "keycloak-services", version.ref = "keycloak" }
+keycloak-admin-client = { group = "org.keycloak", name = "keycloak-admin-client", version.ref = "keycloak" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
