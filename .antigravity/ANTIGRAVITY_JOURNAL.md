@@ -77,6 +77,28 @@ Cross-cutting: rate limiting on challenge requests, audit logging of auth events
 
 ---
 
+## M5 · step 3 — Keycloak Authenticator SPI Integration Tests   (commit 86c783a)
+
+**What:** Implemented an end-to-end integration test suite for the custom Keycloak Authenticator plugin inside `w3auth-keycloak-plugin` utilizing Testcontainers.
+
+*   Implemented [W3AuthAuthenticatorIntegrationTest](file:///c:/Users/a_isazadeh/IdeaProjects/W3-Auth/w3auth-keycloak-plugin/src/test/java/com/w3auth/keycloak/W3AuthAuthenticatorIntegrationTest.java) which spins up Keycloak (`quay.io/keycloak/keycloak:25.0.2`), imports a test realm `w3auth-test`, sets up our custom `w3auth-flow` browser flow, and configures domain/URI restrictions.
+*   Wired the plugin sub-module's `jar` task to package the plugin as a **Fat JAR** containing all runtime dependencies (such as `:w3auth-core` and transitive `web3j` signature packages), but excluding `bcprov` (BouncyCastle) since Keycloak's boot classpath already provides it.
+*   Configured the `:w3auth-keycloak-plugin:test` task to package the fat JAR before running, passing the path dynamically to the test JVM for container filesystem mounting.
+*   Configured Keycloak's container wait strategy to wait for HTTP response 200 on `/realms/master` before calling Keycloak's Admin client.
+*   Disabled Keycloak's default required actions (`VERIFY_PROFILE`, `UPDATE_PROFILE`) programmatically in the test realm to enable direct auth code callback redirects.
+*   Enabled a `CookieManager` in the test's `HttpClient` to support session cookies between the initial OIDC GET challenge and the wallet postback action.
+
+**Why:** Validating classloader isolation, theme template bindings, and authentication action handlers directly on a live running instance of Keycloak prevents production deployment surprises. A lightweight HTTP-driven flow execution avoids heavy browser drivers while verifying the exact boundary behaviors of Keycloak.
+
+**Learned:** 
+1. Keycloak provider plugins must package all compile dependencies as a self-contained JAR, but should exclude libraries already present in Keycloak's runtime bootpath (like BouncyCastle) to avoid runtime linkage clashes.
+2. In Windows named pipe communication, Testcontainers requires a robust transport client on the classpath (like HttpClient5 or Netty) to format `Host` headers correctly and avoid status 400 Bad Request rejections by Docker Desktop.
+3. Cookie management must be explicitly enabled in native Java `HttpClient` to maintain session context during multi-step OIDC browser login flows.
+
+**Open / next:** Ready for production staging!
+
+---
+
 ## M5 · housekeeping — Line-Ending Normalization & Keycloak Config Hardening   (commit 64d7410)
 
 **What:** Fixed a critical cross-compatibility bug in SIWE/SIWS parsing to handle Windows-style carriage returns (`\r\n`) and hardened Keycloak configuration properties validation against empty values.
