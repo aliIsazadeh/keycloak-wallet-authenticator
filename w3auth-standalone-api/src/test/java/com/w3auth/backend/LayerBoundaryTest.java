@@ -11,7 +11,8 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
  * Architecture decision: core packages (identity, challenge, verification, session, usecase)
  * must remain plain Java — no Spring, JPA, Hibernate, Redis, or infrastructure imports.
  * This keeps domain logic testable without a container and enforces the port/adapter split.
- * See CLAUDE.md "Locked architecture decisions" and docs/ARCHITECTURE.md "Layer boundaries".
+ * See AGENTS.md / CLAUDE.md "Locked architecture decisions" and
+ * .antigravity/architecture/ANTIGRAVITY_ARCHITECTURE.md "Layer boundaries".
  */
 class LayerBoundaryTest {
 
@@ -46,7 +47,7 @@ class LayerBoundaryTest {
         ArchRule rule = noClasses()
             .that().resideInAnyPackage(CORE_PACKAGES)
             .should().dependOnClassesThat().resideInAnyPackage(FORBIDDEN_PACKAGES)
-            .because("core packages must stay framework-free (CLAUDE.md locked architecture decision #1-#5)");
+            .because("core packages must stay framework-free (AGENTS.md/CLAUDE.md locked architecture decisions #1-#5)");
 
         rule.check(classes);
     }
