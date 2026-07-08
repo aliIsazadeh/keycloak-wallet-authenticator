@@ -1,7 +1,7 @@
 # Security Policy
 
-W3-Auth is authentication software. Security reports are taken seriously and handled
-with priority.
+Keycloak Wallet Authenticator is authentication software. Security reports are taken
+seriously and handled with priority.
 
 ## Reporting a vulnerability
 

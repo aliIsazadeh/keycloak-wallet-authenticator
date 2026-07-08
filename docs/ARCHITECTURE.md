@@ -1,11 +1,11 @@
-# Architecture — W3-Auth
+# Architecture — Keycloak Wallet Authenticator
 
-The design and reasoning behind W3-Auth. When a decision is unclear, this document
-is the reference.
+The design and reasoning behind Keycloak Wallet Authenticator. When a decision is
+unclear, this document is the reference.
 
 ## 1. Purpose and philosophy
 
-W3-Auth does one thing: prove that a client controls the private key for a crypto
+It does one thing: prove that a client controls the private key for a crypto
 wallet, then issue a login session. Everything else is detail.
 
 It is **protocol-driven, not SDK-driven.** Every client — Reown AppKit, MetaMask,

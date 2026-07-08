@@ -17,7 +17,7 @@ engineering decisions I think are worth sharing.
 
 ## The one-sentence version
 
-W3-Auth is a Keycloak Authenticator SPI plugin that lets users sign in with a wallet
+Keycloak Wallet Authenticator is an Authenticator SPI plugin that lets users sign in with a wallet
 — Ethereum (SIWE / EIP-4361) or Solana (SIWS), externally-owned or smart-contract
 wallets — as one authenticator inside your existing browser flow. It doesn't replace
 your passwords, MFA, or social logins. It sits next to them.
@@ -117,7 +117,7 @@ It's open source under Apache-2.0. It's a real plugin, not a demo — but it's e
 and I'd genuinely like eyes on the security-sensitive paths. If you run Keycloak and
 have wanted wallet login, try it and tell me where it breaks.
 
-Repo: **[github.com/aliIsazadeh/w3-auth](https://github.com/aliIsazadeh/w3-auth)**
+Repo: **[github.com/aliIsazadeh/keycloak-wallet-authenticator](https://github.com/aliIsazadeh/keycloak-wallet-authenticator)**
 
 And if your team needs wallet auth or web3 identity wired into your stack — Keycloak
 or otherwise — this is the kind of thing I build. I'm reachable at isazadhali@gmail.com.

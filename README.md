@@ -1,9 +1,4 @@
-<!--
-  Fill in the placeholders marked <LIKE_THIS> before publishing:
-  <GITHUB_USER>, <CONTACT_EMAIL>, <LINKEDIN_URL>, <DEMO_GIF_URL>
--->
-
-# W3-Auth — Wallet Authentication for Keycloak
+# Keycloak Wallet Authenticator
 
 **Production-grade, protocol-driven wallet login for Keycloak.** Let users sign in
 with a crypto wallet — Ethereum (SIWE) or Solana (SIWS), externally-owned or
@@ -11,7 +6,7 @@ smart-contract wallets — as a native Keycloak Authenticator, with no wallet SD
 and no third-party auth service.
 
 <!-- Badges: uncomment and fill in once CI + release are live
-[![CI](https://github.com/aliIsazadeh/w3-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/aliIsazadeh/w3-auth/actions)
+[![CI](https://github.com/aliIsazadeh/keycloak-wallet-authenticator/actions/workflows/ci.yml/badge.svg)](https://github.com/aliIsazadeh/keycloak-wallet-authenticator/actions)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Keycloak](https://img.shields.io/badge/Keycloak-25%2B-brightgreen)](https://www.keycloak.org)
 -->
@@ -28,7 +23,7 @@ wallet support, and untested against a real Keycloak. Teams that already run
 Keycloak for their identity and want to add wallet login are left wiring up a
 second OIDC server or a fragile reverse-proxy hack.
 
-W3-Auth is the version that isn't a toy: a real Keycloak Authenticator SPI plugin,
+Keycloak Wallet Authenticator is the version that isn't a toy: a real Authenticator SPI plugin,
 built on a framework-free verification core, tested end-to-end against a live
 Keycloak in Testcontainers.
 
@@ -95,7 +90,7 @@ smart-contract wallet support.
 # produces w3auth-keycloak-plugin/build/libs/w3auth-keycloak-plugin-<version>.jar
 ```
 
-Or grab the prebuilt JAR from the [latest release](https://github.com/aliIsazadeh/w3-auth/releases).
+Or grab the prebuilt JAR from the [latest release](https://github.com/aliIsazadeh/keycloak-wallet-authenticator/releases).
 
 ### 2. Install it into Keycloak
 
