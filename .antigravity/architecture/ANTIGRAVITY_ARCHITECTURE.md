@@ -1,7 +1,7 @@
 # Architecture — Wallet Authentication Backend
 
-This is the full reasoning behind the rules in the root `ANTIGRAVITY.md` (and `CLAUDE.md`). When a
-decision is unclear, this document wins.
+This is the full reasoning behind the rules in the root `ANTIGRAVITY.md` / `CLAUDE.md`
+(and `.agents/AGENTS.md`). When a decision is unclear, this document wins.
 
 ## 1. Purpose and philosophy
 
@@ -35,35 +35,44 @@ address)` — not the full string — because:
 The central value object is `CaipAccountId`. Everything downstream speaks
 `CaipAccountId`, never raw strings.
 
-## 3. Code structure (V1: single Gradle module)
+## 3. Code structure (M5: multi-module Gradle)
 
-V1 is a **single Gradle module** (Kotlin DSL) with clean packages. Multi-module
-is deferred — it is structure we do not yet need (rule of three applied to the
-build itself). The dependency rule we care about is enforced with an **ArchUnit
-test** instead of separate modules:
+V1 started as a **single Gradle module** with clean packages — multi-module was
+structure we did not yet need (rule of three applied to the build itself). The
+real forcing case arrived at **M5**: the Keycloak plugin needed the
+verification engine as its own framework-free artifact. The project is now
+three modules (Kotlin DSL) coordinated by a root build with a centralized
+version catalog (`gradle/libs.versions.toml`):
+
+| Module                   | Role                                                           |
+| ------------------------ | -------------------------------------------------------------- |
+| `w3auth-core`            | Framework-free Java library: identity, challenge, verification, session, usecase. Depends on web3j `crypto` (signing math) but never Spring/JPA/Redis. |
+| `w3auth-standalone-api`  | Spring Boot REST application: `api`, `config` (composition root), `infrastructure` (JPA/Redis/Flyway/`Web3jChainClient`), `security`. |
+| `w3auth-keycloak-plugin` | Keycloak Authenticator SPI plugin (fat JAR), see §7a.          |
+
+Core packages in `w3auth-core`:
+
+| Package          | Holds                                                            |
+| ---------------- | --------------------------------------------------------------- |
+| `identity`       | `CaipAccountId`, `Namespace`, `WalletIdentity`, `WalletIdentityStore` (port), `SolanaCluster`, `SolanaPublicKey`, `Base58` |
+| `challenge`      | `Challenge`, `Nonce`, `ChallengeStore` (port), `ChallengePolicy`, `RateLimiter` (port), `SiweMessageFactory`, `SiwsMessageFactory` |
+| `verification`   | `SignatureVerifier`, `EthereumSignatureVerifier`, `ContractAwareSignatureVerifier`, `NamespaceRoutingSignatureVerifier`, `SolanaSignatureVerifier`, `ChainClient` (port), `Eip6492Envelope`, SIWE/SIWS parsers |
+| `session`        | `JwtService`, `JwtPolicy`, access/refresh token logic, `RefreshTokenStore` (port) |
+| `usecase`        | `RequestChallenge`, `VerifyAndAuthenticate`, `RefreshSession`, `Logout`, `AuthEventStore` (port) |
+
+The dependency rule is now enforced twice:
 
 > The core packages — `identity`, `challenge`, `verification`, `session`,
 > `usecase` — must not import Spring, JPA, Redis, or `infrastructure`.
 
-Packages:
+First by the **module boundary** (`w3auth-core` simply has no framework on its
+compile classpath), and second by the **ArchUnit test** (`LayerBoundaryTest`
+in `w3auth-standalone-api`), which keeps guarding against `infrastructure`
+imports leaking back into core packages.
 
-| Package          | Holds                                                            |
-| ---------------- | --------------------------------------------------------------- |
-| `identity`       | `CaipAccountId`, `Namespace`, `WalletIdentity`                  |
-| `challenge`      | `Challenge`, `Nonce`, `ChallengeStore` (port), `ChallengePolicy`|
-| `verification`   | `SignatureVerifier`, `EthereumSignatureVerifier`, SIWE parser   |
-| `session`        | access/refresh token logic, `SessionStore` (port)              |
-| `usecase`        | `RequestChallenge`, `VerifyAndAuthenticate`, `RefreshSession`, `Logout` |
-| `infrastructure` | JPA entities + repositories, Redis adapters, Flyway migrations  |
-| `security`       | Spring Security config, JWT filter                              |
-| `api`            | REST controllers, request/response DTOs                         |
-
-**When to split into real modules later:** when a heavy dependency needs
-isolating, or when you want to publish the wire contract as its own artifact
-for client SDKs. Not before. Note: web3j (`core` + `crypto`) landed at M3
-without triggering a module split — the dependency was isolated to
-`verification` and `infrastructure` via the `ChainClient` port, which was
-sufficient. The split remains deferred until it earns its keep.
+**Any further split** (e.g. publishing the wire contract as its own artifact
+for client SDKs) needs the same class of forcing reason the M5 split had. Not
+before.
 
 ## 4. Persistence: ephemeral vs durable
 
@@ -89,6 +98,10 @@ same nonce cannot both succeed.
   create a separate session table that duplicates it.
 - `auth_event` — `id`, `identity_id (fk)`, `event_type`, `chain_id`, `ip`,
   `created_at`. Audit trail; later feeds rate-limit/anomaly logic.
+
+This split applies to the standalone API. The Keycloak plugin (§7a) has no
+Redis or Postgres of its own: the nonce lives in the Keycloak auth-session
+note and user records live in Keycloak's own store.
 
 ## 5. Authentication flow
 
@@ -181,6 +194,40 @@ the port; the validator unwraps internally. `Eip6492Envelope` in `verification`
 performs a pure-Java well-formedness gate (bounds checks on the ABI-encoded
 body) before any RPC call is made; malformed envelopes are rejected in-process.
 
+## 7a. Keycloak Authenticator plugin (M5, shipped)
+
+`w3auth-keycloak-plugin` packages the same verification engine as a Keycloak
+**Authenticator SPI** so wallets can log in directly through Keycloak's
+browser flow. Design decisions:
+
+- **Nonce in the auth-session note, not Redis.** `W3AuthAuthenticator`
+  generates a nonce (`Nonce.generate()`), stores it as an auth note on the
+  Keycloak authentication session, and renders `w3auth-login.ftl` (FreeMarker
+  template with `window.ethereum` / Phantom `window.solana` connectors). On
+  postback it parses the SIWE/SIWS message, requires the message nonce to
+  equal the stored note, and removes the note on success — the same
+  single-use discipline as Redis `GETDEL`, using Keycloak's own session
+  storage instead of a new infrastructure dependency.
+- **Server-authoritative fields still apply.** `expected-domain` and
+  `expected-uri` are Keycloak admin config (with safe localhost defaults via
+  a blank-tolerant `getConfigValue`); issuedAt/expiration are checked with a
+  ±5 min skew window.
+- **`HttpChainClient` instead of web3j-core.** The plugin implements the
+  `ChainClient` port over Java 21's native `HttpClient` with manual ABI
+  encoding/decoding. This keeps web3j-core's heavy transitive tree
+  (RxJava/OkHttp) off Keycloak's server classpath. If no `ethereum-rpc-url`
+  is configured, the EVM path degrades to EOA-only verification.
+- **Identity mapping preserves decision §2.** The Keycloak username is
+  `CaipAccountId.identityKey().toJwtSubject()` (`namespace:address`), so
+  switching chains never bifurcates one wallet owner into multiple Keycloak
+  users. Address, namespace, and chainId are stored as user attributes.
+- **Fat JAR, BouncyCastle excluded.** The plugin jar bundles `w3auth-core`
+  and its runtime deps but excludes `bcprov`, which Keycloak's boot classpath
+  already provides (bundling it causes runtime linkage clashes).
+- **Proven against a real Keycloak.** `W3AuthAuthenticatorIntegrationTest`
+  runs Keycloak 25.0.2 in Testcontainers, imports a test realm with the
+  custom browser flow, and drives the full OIDC login with signed messages.
+
 ## 8. The one allowed interface
 
 ```java
@@ -189,17 +236,24 @@ public interface SignatureVerifier {
 }
 ```
 
-Two concrete implementations exist:
+Four concrete implementations exist:
 
 - `EthereumSignatureVerifier` — EOA `ecrecover` path.
-- `ContractAwareSignatureVerifier` — the dispatcher introduced at M3; routes
-  each request across the EOA, EIP-1271, and EIP-6492 paths. Wraps
+- `ContractAwareSignatureVerifier` — the EVM dispatcher introduced at M3;
+  routes each request across the EOA, EIP-1271, and EIP-6492 paths. Wraps
   `EthereumSignatureVerifier` internally.
+- `SolanaSignatureVerifier` — Ed25519 path introduced at M4.
+- `NamespaceRoutingSignatureVerifier` — the top-level dispatcher introduced
+  at M4; routes by namespace (`eip155` vs `solana`) to the verifiers above.
+
+The `ChainClient` port likewise has two adapters: `Web3jChainClient` in the
+standalone API and the zero-dependency `HttpChainClient` in the Keycloak
+plugin (§7a).
 
 The interface began as a **test seam** (so `VerifyAndAuthenticate` can be
-tested with a one-liner stub). The real second case arrived at M3 and confirmed
-the abstraction was correct. It is not a future-protocol hook — the seam now
-has two real implementations, which is the rule-of-three justification.
+tested with a one-liner stub). The real second case arrived at M3, and M4/M5
+kept confirming the abstraction. It is not a future-protocol hook — the seam
+has real implementations, which is the rule-of-three justification.
 
 ## 9. Build order
 
@@ -219,6 +273,10 @@ has two real implementations, which is the rule-of-three justification.
   `ValidateSigOffchain` universal validator.
 - **M4** ✅ — a second namespace (Solana, Ed25519) to prove the abstraction; only
   then harden any registry.
+- **M5** ✅ — refactor to multi-module Gradle (`w3auth-core`,
+  `w3auth-standalone-api`, `w3auth-keycloak-plugin`) with a version catalog;
+  Keycloak Authenticator SPI plugin with `HttpChainClient`, login theme, and
+  Testcontainers end-to-end tests against Keycloak 25.0.2.
 - **Cross-cutting** ✅ — rate limiting on challenge requests, audit logging of auth events in Postgres, and Testcontainers integration tests.
 
 ## 10. Open decisions / revisit later

@@ -36,3 +36,10 @@ out/
 ### VS Code ###
 .vscode/
 /docs/scratch/security-test-recon.md
+
+### Claude Code ###
+.claude/settings.local.json
+
+### Internal scratch (not for publication)
+_to_delete/
+_claude-skills-update/

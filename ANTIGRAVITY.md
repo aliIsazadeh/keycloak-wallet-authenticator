@@ -1,7 +1,7 @@
 # ANTIGRAVITY.md — Wallet Authentication Backend
 
 This file is the steering wheel for the project. Read it before every task.
-The full reasoning lives in `docs/ARCHITECTURE.md` — read that too for any
+The full reasoning lives in `.antigravity/architecture/ANTIGRAVITY_ARCHITECTURE.md` — read that too for any
 design decision.
 
 ## What this is
@@ -16,15 +16,26 @@ AppKit, but the backend must never import or depend on Reown, WalletConnect,
 or any wallet SDK. Future clients may be MetaMask, raw WalletConnect, or a
 custom SDK — the backend treats them all identically.
 
+It ships in two forms: a **standalone Spring Boot REST API**
+(`w3auth-standalone-api`) and a **Keycloak Authenticator SPI plugin**
+(`w3auth-keycloak-plugin`), both built on the same framework-free
+verification engine (`w3auth-core`).
+
 ## Tech stack
 
-- Java 21, Spring Boot, Spring Security
-- Gradle (Kotlin DSL)
-- PostgreSQL (durable data), Redis (ephemeral data)
+- Java 21, Spring Boot, Spring Security (standalone API only)
+- Gradle (Kotlin DSL), multi-module since M5, with a centralized version
+  catalog (`gradle/libs.versions.toml`)
+- PostgreSQL (durable data), Redis (ephemeral data) — standalone API
 - Hibernate / JPA, Flyway for migrations
 - JWT for access tokens, JUnit + Testcontainers for tests
 - Docker / docker-compose for local Postgres + Redis
-- web3j (crypto 4.12.3 since M1; core 4.12.3 added M3) — isolated to `verification` and `infrastructure`; no RPC dependency in core packages
+- Keycloak 25 Authenticator SPI for the IAM plugin (fat JAR, BouncyCastle
+  excluded — Keycloak provides it)
+- web3j 4.12.3 — `crypto` in `w3auth-core`, `core` (RPC) in
+  `w3auth-standalone-api` only. The Keycloak plugin deliberately avoids
+  web3j-core: `HttpChainClient` implements the `ChainClient` port over
+  Java 21's native `HttpClient` to keep Keycloak's classpath clean.
 
 ## V1 scope (hold this line)
 
@@ -35,13 +46,15 @@ IN scope:
 - EIP-1271 deployed smart-contract wallets (M3a, shipped)
 - EIP-6492 counterfactual smart-contract wallets (M3b, shipped)
 - Multi-namespace SIWX abstraction layer (M4, shipped)
+- Multi-module Gradle build + version catalog (M5, shipped)
+- Keycloak Authenticator SPI plugin (M5, shipped)
 - Rate limiting on challenge requests (shipped)
 - Audit logging of auth events in Postgres (shipped)
 
 OUT of scope for V1 (do not build yet):
-- Plugin system or protocol registry
+- Wallet-protocol plugin system / dynamic protocol registry (note: the
+  Keycloak Authenticator SPI plugin is a different thing and shipped at M5)
 - JWT denylist / instant access-token revocation
-- Multi-module Gradle build (single module + packages for now)
 
 ## Locked architecture decisions
 
@@ -59,9 +72,11 @@ OUT of scope for V1 (do not build yet):
    V1), plus a server-side refresh token stored in Postgres. Logout revokes
    the refresh-token family. Refresh tokens rotate; reusing an old one
    revokes the whole family. No JWT denylist in V1.
-5. **Ephemeral vs durable split.** Nonces/challenges live in **Redis only**
-   with a TTL and are **never** written to Postgres. Wallet identities,
-   refresh tokens, and audit logs live in Postgres.
+5. **Ephemeral vs durable split.** In the standalone API, nonces/challenges
+   live in **Redis only** with a TTL and are **never** written to Postgres.
+   Wallet identities, refresh tokens, and audit logs live in Postgres. In the
+   Keycloak plugin the nonce lives in the Keycloak auth-session note — same
+   single-use discipline, no Redis.
 6. **Atomic nonce consume.** On verify, consume the nonce atomically
    (`GETDEL` or a Lua script). A `GET` then later `DEL` is a replay bug.
 7. **Verification is claim validation, not just address recovery.** Recover
@@ -73,25 +88,46 @@ OUT of scope for V1 (do not build yet):
    TTL is the real expiry gate; the message's own timestamps are a secondary
    check only.
 
-## Package layout (single module, V1)
+## Module layout (multi-module since M5)
 
 ```
-com.<org>.walletauth
-├── identity/        CaipAccountId, Namespace, WalletIdentity
-├── challenge/       Challenge, Nonce, ChallengeStore (port), ChallengePolicy
+w3auth-core — framework-free Java library (no Spring/JPA/Redis imports)
+com.w3auth.backend
+├── identity/        CaipAccountId, Namespace, WalletIdentity,
+│                    WalletIdentityStore (port), SolanaCluster,
+│                    SolanaPublicKey, Base58
+├── challenge/       Challenge, Nonce, ChallengeStore (port), ChallengePolicy,
+│                    RateLimiter (port), SiweMessageFactory, SiwsMessageFactory
 ├── verification/    SignatureVerifier (interface), EthereumSignatureVerifier (EOA),
-│                    ContractAwareSignatureVerifier (dispatcher), ChainClient (port),
-│                    Eip6492Envelope (6492 well-formedness gate), SiweMessage, SiweMessageParser
-├── session/         access/refresh token logic, SessionStore (port)
-├── usecase/         RequestChallenge, VerifyAndAuthenticate, RefreshSession, Logout
-├── infrastructure/  JPA entities + repos, Redis adapters, Flyway, Web3jChainClient
-├── security/        Spring Security config, JWT filter (`JwtAuthenticationFilter`)
-└── api/             REST controllers, request/response DTOs
+│                    ContractAwareSignatureVerifier (EVM dispatcher),
+│                    NamespaceRoutingSignatureVerifier (namespace dispatcher),
+│                    SolanaSignatureVerifier (Ed25519), ChainClient (port),
+│                    Eip6492Envelope (6492 well-formedness gate),
+│                    SiweMessage/SiweMessageParser, SiwsMessage/SiwsMessageParser
+├── session/         JwtService, JwtPolicy, RefreshTokenStore (port),
+│                    refresh-token logic
+└── usecase/         RequestChallenge, VerifyAndAuthenticate, RefreshSession,
+                     Logout, AuthEventStore (port)
+
+w3auth-standalone-api — Spring Boot REST application
+com.w3auth.backend
+├── api/             REST controllers, request/response DTOs
+├── config/          composition root: wires use cases as plain beans
+├── infrastructure/  JPA entities + repos, Redis adapters, Flyway,
+│                    Web3jChainClient (RPC adapter)
+└── security/        Spring Security config, JwtAuthenticationFilter
+
+w3auth-keycloak-plugin — Keycloak Authenticator SPI (fat JAR)
+com.w3auth.keycloak
+├── W3AuthAuthenticator / W3AuthAuthenticatorFactory
+├── HttpChainClient  (zero-dependency ChainClient over java.net.http)
+└── theme-resources/templates/w3auth-login.ftl
 ```
 
-Enforce "core packages (identity, challenge, verification, session, usecase)
-must not import Spring or infrastructure" with an **ArchUnit** test. This
-replaces multi-module boundaries for now.
+The M5 module split makes the core/framework boundary a compile-time
+guarantee (`w3auth-core` has no Spring on its classpath). The **ArchUnit**
+test (`LayerBoundaryTest` in `w3auth-standalone-api`) still guards the same
+rule — core packages must not import Spring, JPA, Redis, or `infrastructure`.
 
 ## How we work together
 
@@ -103,17 +139,19 @@ replaces multi-module boundaries for now.
 - Apply the **rule of three**: build the first concrete implementation, do not
   add an interface or abstraction until a real second case forces it.
   `SignatureVerifier` began as a test seam with one implementation
-  (`EthereumSignatureVerifier`); the real second case arrived at M3
-  (`ContractAwareSignatureVerifier`, the dispatcher for EOA / EIP-1271 /
-  EIP-6492). The abstraction earned its keep. The same discipline applies to
-  any new abstraction — no hypothetical future cases.
+  (`EthereumSignatureVerifier`); real cases arrived at M3
+  (`ContractAwareSignatureVerifier`) and M4 (`SolanaSignatureVerifier`,
+  `NamespaceRoutingSignatureVerifier`). The abstraction earned its keep. The
+  same discipline applies to any new abstraction — no hypothetical future
+  cases. The module split followed the same rule: it waited until the
+  Keycloak plugin (M5) actually needed `w3auth-core` as its own artifact.
 - If a request of mine weakens the architecture, push back and say so directly.
 - No tutorial/demo shortcuts. Production-grade only.
 
 ## Testing
 
 - JUnit for unit tests; Testcontainers to run a real Postgres and Redis in
-  integration tests.
+  integration tests (and a real Keycloak for the plugin's end-to-end suite).
 - Security-sensitive code (challenge, verify, session) must have tests for the
   failure paths: expired nonce, reused nonce, wrong domain, wrong chainId,
   signer mismatch.
