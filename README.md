@@ -11,7 +11,8 @@ and no third-party auth service.
 [![Keycloak](https://img.shields.io/badge/Keycloak-25%2B-brightgreen)](https://www.keycloak.org)
 -->
 
-![Wallet login through Keycloak](docs/demo.gif)
+<!-- TODO: record and add docs/demo.gif before promoting this link -->
+<!-- ![Wallet login through Keycloak](docs/demo.gif) -->
 
 ---
 
