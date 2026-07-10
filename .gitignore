@@ -43,3 +43,10 @@ out/
 ### Internal scratch (not for publication)
 _to_delete/
 _claude-skills-update/
+
+### Local-only strategy docs (private — never publish to this repo)
+/docs/BUSINESS-PLAN.md
+/docs/competitive-analysis-2026-07.md
+
+### Unrelated installer — belongs to codebase-memory-mcp, not this project
+/install.ps1
