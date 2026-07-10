@@ -45,6 +45,15 @@ login page. Connect a wallet, sign the SIWE/SIWS message, and you're in.
 (These match the authenticator's defaults, set explicitly in
 `realm-export.json` under `authenticatorConfig`.)
 
+## Note: account clients are intentionally not in the realm export
+
+`realm-export.json` deliberately does **not** define the stock `account` /
+`account-console` clients. Keycloak's realm import bootstraps them itself, and
+that bootstrap is what composites `view-profile` / `manage-account` into
+`default-roles-<realm>`. Hand-defining those clients suppresses the bootstrap,
+so wallet users (auto-granted the default role by `addUser()`) end up without
+`account:view-profile` and the Account Console fails with a 401. Leave them out.
+
 ## Admin console
 
 `http://localhost:8080/admin` — login `admin` / `admin` — if you want to poke

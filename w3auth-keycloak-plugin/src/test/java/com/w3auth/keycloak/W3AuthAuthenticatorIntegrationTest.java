@@ -244,5 +244,14 @@ class W3AuthAuthenticatorIntegrationTest {
         Map<String, List<String>> attributes = userRep.getAttributes();
         assertThat(attributes.get("w3auth_address")).containsExactly(EXPECTED_ADDRESS);
         assertThat(attributes.get("w3auth_namespace")).containsExactly("EIP155");
+
+        // Wallet users must be first-class citizens. Keycloak's addUser() auto-grants the realm
+        // default role, which in a standard realm composites account:view-profile/manage-account —
+        // the roles the Account Console REST API requires (without them it returns 401). Assert the
+        // provisioned user actually carries the default role, so wallet logins get account access.
+        List<RoleRepresentation> realmRoles = adminClient.realm("w3auth-test").users()
+                .get(userRep.getId()).roles().realmLevel().listAll();
+        assertThat(realmRoles).extracting(RoleRepresentation::getName)
+                .contains("default-roles-w3auth-test");
     }
 }
