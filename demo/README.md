@@ -14,7 +14,7 @@ From the repo root:
 ./gradlew :w3auth-keycloak-plugin:jar
 ```
 
-This produces `w3auth-keycloak-plugin/build/libs/w3auth-keycloak-plugin-1.0.0.jar`,
+This produces `w3auth-keycloak-plugin/build/libs/w3auth-keycloak-plugin-1.0.1.jar`,
 which `demo/docker-compose.yml` mounts into Keycloak's `/opt/keycloak/providers/`.
 
 ## 2. Start Keycloak
