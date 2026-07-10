@@ -4,14 +4,16 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 
 /**
- * Parses the EIP-4361 message string produced by
- * {@code challenge.SiweMessageFactory}. Strict and fail-closed: any deviation
- * from the expected 10-line layout throws {@link IllegalArgumentException}.
+ * Parses the EIP-4361 (Sign-In with Ethereum) message string. Spec-tolerant:
+ * accepts both the no-statement form and the optional {@code statement} block
+ * defined by EIP-4361 ABNF. Required fields (URI, Version, Chain ID, Nonce,
+ * Issued At, Expiration Time) are located by their label prefix rather than fixed
+ * line indices, so unknown or optional trailing fields are silently ignored.
  *
- * <p>This parser is intentionally narrow — it only accepts messages in the
- * exact format this server emits (no statement block, no optional fields beyond
- * what the factory produces). Policy validation (domain match, nonce expiry,
- * chainId check) and signature verification are the caller's responsibility.
+ * <p>Fail-closed: missing or malformed required fields throw
+ * {@link IllegalArgumentException}. Policy validation (domain match, nonce
+ * expiry, chainId check) and signature verification are the caller's
+ * responsibility.
  */
 public final class SiweMessageParser {
 
@@ -29,8 +31,11 @@ public final class SiweMessageParser {
     /**
      * Parses a SIWE message string into a {@link SiweMessage}.
      *
-     * @throws IllegalArgumentException if the message does not exactly match
-     *                                  the expected 10-line EIP-4361 layout
+     * <p>Supports both the no-statement (10-line) and optional-statement (11+ line)
+     * EIP-4361 layouts. All required fields must be present.
+     *
+     * @throws IllegalArgumentException if the message is structurally invalid or
+     *                                  any required field is missing
      */
     public static SiweMessage parse(String message) {
         if (message == null) {
@@ -43,9 +48,8 @@ public final class SiweMessageParser {
                 lines[i] = lines[i].substring(0, lines[i].length() - 1);
             }
         }
-        if (lines.length != 10) {
-            throw new IllegalArgumentException(
-                    "expected 10 lines, got " + lines.length);
+        if (lines.length < 10) {
+            throw new IllegalArgumentException("expected at least 10 lines, got " + lines.length);
         }
 
         String domain = parseDomain(lines[0]);
@@ -55,14 +59,52 @@ public final class SiweMessageParser {
         }
 
         requireBlankLine(lines[2], 2);
-        requireBlankLine(lines[3], 3);
 
-        String uri = extractField(lines[4], PREFIX_URI, 4);
-        String version = extractField(lines[5], PREFIX_VERSION, 5);
-        String chainId = extractField(lines[6], PREFIX_CHAIN_ID, 6);
-        String nonce = extractField(lines[7], PREFIX_NONCE, 7);
-        Instant issuedAt = parseInstant(lines[8], PREFIX_ISSUED_AT, 8);
-        Instant expiresAt = parseInstant(lines[9], PREFIX_EXPIRATION, 9);
+        // EIP-4361: optional statement sits between the two blank lines that follow the address.
+        // No statement: line 3 is blank → field block starts at line 4.
+        // Statement:    line 3 is the statement text → line 4 must be blank → field block starts at line 5.
+        int fieldStart;
+        if (lines[3].isEmpty()) {
+            fieldStart = 4;
+        } else {
+            if (lines.length < 11) {
+                throw new IllegalArgumentException(
+                        "expected at least 11 lines when statement is present, got " + lines.length);
+            }
+            requireBlankLine(lines[4], 4);
+            fieldStart = 5;
+        }
+
+        String uri = null;
+        String version = null;
+        String chainId = null;
+        String nonce = null;
+        Instant issuedAt = null;
+        Instant expiresAt = null;
+
+        for (int i = fieldStart; i < lines.length; i++) {
+            String line = lines[i];
+            if (line.startsWith(PREFIX_URI)) {
+                uri = extractField(line, PREFIX_URI, i);
+            } else if (line.startsWith(PREFIX_VERSION)) {
+                version = extractField(line, PREFIX_VERSION, i);
+            } else if (line.startsWith(PREFIX_CHAIN_ID)) {
+                chainId = extractField(line, PREFIX_CHAIN_ID, i);
+            } else if (line.startsWith(PREFIX_NONCE)) {
+                nonce = extractField(line, PREFIX_NONCE, i);
+            } else if (line.startsWith(PREFIX_ISSUED_AT)) {
+                issuedAt = parseInstant(line, PREFIX_ISSUED_AT, i);
+            } else if (line.startsWith(PREFIX_EXPIRATION)) {
+                expiresAt = parseInstant(line, PREFIX_EXPIRATION, i);
+            }
+        }
+
+        if (uri == null) throw new IllegalArgumentException("URI: field is missing");
+        if (version == null) throw new IllegalArgumentException("Version: field is missing");
+        if (chainId == null) throw new IllegalArgumentException("Chain ID: field is missing");
+        if (nonce == null) throw new IllegalArgumentException("Nonce: field is missing");
+        if (issuedAt == null) throw new IllegalArgumentException("Issued At: field is missing");
+        if (expiresAt == null) throw new IllegalArgumentException("Expiration Time: field is missing");
 
         return new SiweMessage(domain, address, uri, version, chainId, nonce, issuedAt, expiresAt);
     }

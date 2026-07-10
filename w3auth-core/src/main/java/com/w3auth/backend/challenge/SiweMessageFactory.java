@@ -5,15 +5,16 @@ package com.w3auth.backend.challenge;
  * {@link Challenge}.
  *
  * <p>This is a pure formatter: it produces the message to be signed, but does
- * not parse or verify a returned message (that is M1, in {@code verification}).
+ * not parse or verify a returned message (that is in {@code verification}).
  *
  * <p><strong>Format:</strong> per the EIP-4361 ABNF, the optional
  * {@code [ statement LF ]} sits between two {@code LF}s following the address
  * line. With no statement, that collapses to two blank lines between the
  * address and {@code URI:} — confirmed against the reference implementation
- * (spruceid/siwe {@code toMessage()}), which produces the same. M0 omits the
- * statement block entirely; {@code ChallengePolicy} has no {@code statement}
- * field — one can be added if a real client needs it.
+ * (spruceid/siwe {@code toMessage()}), which produces the same. This factory
+ * omits the statement; {@code ChallengePolicy} has no {@code statement} field
+ * and one can be added when a real client needs it. {@code SiweMessageParser}
+ * accepts both forms (with and without statement).
  *
  * <p><strong>EIP-55 Checksum:</strong> the {@code address} line is formatted
  * using the EIP-55 checksum encoding (via web3j's {@code Keys.toChecksumAddress})

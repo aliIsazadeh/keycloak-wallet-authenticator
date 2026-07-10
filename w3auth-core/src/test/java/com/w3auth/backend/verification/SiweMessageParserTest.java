@@ -24,7 +24,7 @@ class SiweMessageParserTest {
                 "https://example.com/login", ISSUED_AT, EXPIRES_AT);
     }
 
-    // ── round-trip ────────────────────────────────────────────────────────────
+    // ── round-trip: no statement (factory format, 10 lines) ───────────────────
 
     @Test
     void roundTrip_allFieldsMatchChallenge() {
@@ -56,7 +56,62 @@ class SiweMessageParserTest {
         assertThat(parsed.expiresAt()).isEqualTo(challenge.expiresAt());
     }
 
-    // ── malformed: wrong line count ───────────────────────────────────────────
+    // ── EIP-4361 optional statement (11-line FTL format) ──────────────────────
+
+    /**
+     * Exact string the w3auth-login.ftl template builds in the browser, using
+     * the Hardhat Account #0 address. This is the real-world fixture — if this
+     * test breaks, sign-in from the Keycloak demo page will fail.
+     */
+    @Test
+    void parse_withStatement_allFieldsMatch() {
+        String message =
+                "localhost wants you to sign in with your Ethereum account:\n" +
+                "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266\n" +
+                "\n" +
+                "Sign in to Keycloak.\n" +
+                "\n" +
+                "URI: http://localhost:8080\n" +
+                "Version: 1\n" +
+                "Chain ID: 1\n" +
+                "Nonce: abc123nonce\n" +
+                "Issued At: 2026-06-15T12:00:00Z\n" +
+                "Expiration Time: 2026-06-15T12:05:00Z";
+
+        SiweMessage parsed = SiweMessageParser.parse(message);
+
+        assertThat(parsed.domain()).isEqualTo("localhost");
+        assertThat(parsed.address()).isEqualTo("0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
+        assertThat(parsed.uri()).isEqualTo("http://localhost:8080");
+        assertThat(parsed.version()).isEqualTo("1");
+        assertThat(parsed.chainId()).isEqualTo("1");
+        assertThat(parsed.nonce()).isEqualTo("abc123nonce");
+        assertThat(parsed.issuedAt()).isEqualTo(Instant.parse("2026-06-15T12:00:00Z"));
+        assertThat(parsed.expiresAt()).isEqualTo(Instant.parse("2026-06-15T12:05:00Z"));
+    }
+
+    @Test
+    void parse_withStatement_carriage_returns_parsesSuccessfully() {
+        String message =
+                "localhost wants you to sign in with your Ethereum account:\r\n" +
+                "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266\r\n" +
+                "\r\n" +
+                "Sign in to Keycloak.\r\n" +
+                "\r\n" +
+                "URI: http://localhost:8080\r\n" +
+                "Version: 1\r\n" +
+                "Chain ID: 1\r\n" +
+                "Nonce: abc123nonce\r\n" +
+                "Issued At: 2026-06-15T12:00:00Z\r\n" +
+                "Expiration Time: 2026-06-15T12:05:00Z";
+
+        SiweMessage parsed = SiweMessageParser.parse(message);
+
+        assertThat(parsed.domain()).isEqualTo("localhost");
+        assertThat(parsed.nonce()).isEqualTo("abc123nonce");
+    }
+
+    // ── malformed: too few lines ──────────────────────────────────────────────
 
     @Test
     void rejects_tooFewLines() {
@@ -66,19 +121,10 @@ class SiweMessageParserTest {
 
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> SiweMessageParser.parse(truncated))
-                .withMessageContaining("expected 10 lines");
+                .withMessageContaining("expected at least 10 lines");
     }
 
-    @Test
-    void rejects_tooManyLines() {
-        String message = SiweMessageFactory.create(defaultChallenge()) + "\nextra line";
-
-        assertThatIllegalArgumentException()
-                .isThrownBy(() -> SiweMessageParser.parse(message))
-                .withMessageContaining("expected 10 lines");
-    }
-
-    // ── malformed: missing prefix ─────────────────────────────────────────────
+    // ── malformed: missing required field ─────────────────────────────────────
 
     @Test
     void rejects_missingUriPrefix() {
@@ -88,6 +134,18 @@ class SiweMessageParserTest {
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> SiweMessageParser.parse(message))
                 .withMessageContaining("URI: ");
+    }
+
+    @Test
+    void rejects_missingExpirationTime() {
+        // Replace the Expiration Time line with an unrecognised line so the total
+        // line count stays at 10 and the "< 10" guard doesn't fire first.
+        String message = SiweMessageFactory.create(defaultChallenge())
+                .replaceAll("Expiration Time: .*", "Unknown-Field: something");
+
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> SiweMessageParser.parse(message))
+                .withMessageContaining("Expiration Time");
     }
 
     // ── malformed: unparseable timestamp ──────────────────────────────────────
@@ -108,13 +166,14 @@ class SiweMessageParserTest {
     void rejects_nonEmptyBlankLine() {
         // Replace the first blank line (line index 2) with a space
         String message = SiweMessageFactory.create(defaultChallenge());
-        // The first blank line is the third line ("\n\n\n") — replace first "\n\n" with "\n \n"
         String corrupted = message.replaceFirst("\n\n", "\n \n");
 
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> SiweMessageParser.parse(corrupted))
                 .withMessageContaining("must be blank");
     }
+
+    // ── CRLF tolerance (no statement) ─────────────────────────────────────────
 
     @Test
     void parse_messageWithCarriageReturns_parsesSuccessfully() {
