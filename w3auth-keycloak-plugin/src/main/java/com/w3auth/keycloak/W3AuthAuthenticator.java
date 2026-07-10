@@ -10,11 +10,13 @@ import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.Authenticator;
+import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.AuthenticatorConfigModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +31,10 @@ public class W3AuthAuthenticator implements Authenticator {
 
     @Override
     public void authenticate(AuthenticationFlowContext context) {
+        context.challenge(buildLoginForm(context, null));
+    }
+
+    private Response buildLoginForm(AuthenticationFlowContext context, String error) {
         String nonce = Nonce.generate();
         context.getAuthenticationSession().setAuthNote(NONCE_NOTE, nonce);
 
@@ -37,36 +43,48 @@ public class W3AuthAuthenticator implements Authenticator {
         String expectedDomain = getConfigValue(configMap, "expected-domain", "localhost");
         String expectedUri = getConfigValue(configMap, "expected-uri", "http://localhost:8080");
 
-        Response challengeForm = context.form()
+        LoginFormsProvider form = context.form()
                 .setAttribute("nonce", nonce)
                 .setAttribute("expectedDomain", expectedDomain)
-                .setAttribute("expectedUri", expectedUri)
-                .createForm("w3auth-login.ftl");
-        context.challenge(challengeForm);
+                .setAttribute("expectedUri", expectedUri);
+
+        if (error != null) {
+            form = form.setError(error);
+        }
+
+        return form.createForm("w3auth-login.ftl");
     }
 
     @Override
     public void action(AuthenticationFlowContext context) {
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
         String accountIdStr = formData.getFirst("accountId");
-        String rawMessage = formData.getFirst("message");
+        String messageHex = formData.getFirst("messageHex");
         String signature = formData.getFirst("signature");
 
-        if (accountIdStr == null || rawMessage == null || signature == null ||
-                accountIdStr.isBlank() || rawMessage.isBlank() || signature.isBlank()) {
-            Response errorForm = context.form()
-                    .setError("Missing wallet login credentials")
-                    .createForm("w3auth-login.ftl");
-            context.challenge(errorForm);
+        if (accountIdStr == null || messageHex == null || signature == null ||
+                accountIdStr.isBlank() || messageHex.isBlank() || signature.isBlank()) {
+            context.challenge(buildLoginForm(context, "Missing wallet login credentials"));
+            return;
+        }
+
+        // Byte-exact transport: the client submits the message as hex of the exact bytes the
+        // wallet signed, never as plaintext. An HTML form's application/x-www-form-urlencoded
+        // serializer normalizes "\n" -> "\r\n", which corrupts the signed bytes and breaks
+        // EIP-191 recovery (the signer recovers over different bytes than the wallet signed).
+        // Hex-decoding here reconstructs the canonical bytes; those same bytes feed both SIWE
+        // parsing and the verifier's EIP-191 hash, so signed-bytes == verified-bytes.
+        String rawMessage;
+        try {
+            rawMessage = decodeHexMessage(messageHex);
+        } catch (IllegalArgumentException e) {
+            context.challenge(buildLoginForm(context, "Malformed wallet login message encoding"));
             return;
         }
 
         String storedNonce = context.getAuthenticationSession().getAuthNote(NONCE_NOTE);
         if (storedNonce == null) {
-            Response errorForm = context.form()
-                    .setError("Login session expired. Please reload.")
-                    .createForm("w3auth-login.ftl");
-            context.challenge(errorForm);
+            context.challenge(buildLoginForm(context, "Login session expired. Please reload."));
             return;
         }
 
@@ -150,10 +168,7 @@ public class W3AuthAuthenticator implements Authenticator {
             context.success();
 
         } catch (Exception e) {
-            Response errorForm = context.form()
-                    .setError("Wallet verification failed: " + e.getMessage())
-                    .createForm("w3auth-login.ftl");
-            context.challenge(errorForm);
+            context.challenge(buildLoginForm(context, "Wallet verification failed: " + e.getMessage()));
         }
     }
 
@@ -172,6 +187,28 @@ public class W3AuthAuthenticator implements Authenticator {
             return Namespace.SOLANA;
         }
         throw new IllegalArgumentException("Unknown or unsupported authentication message format");
+    }
+
+    /**
+     * Decodes the hex-encoded SIWE/SIWS message back to its canonical UTF-8 bytes.
+     * Accepts an optional {@code 0x} prefix. Fail-closed on any malformed input:
+     * odd length, empty, or a non-hex character.
+     */
+    private static String decodeHexMessage(String hex) {
+        String clean = (hex.startsWith("0x") || hex.startsWith("0X")) ? hex.substring(2) : hex;
+        if (clean.isEmpty() || clean.length() % 2 != 0) {
+            throw new IllegalArgumentException("message hex must be non-empty with an even length");
+        }
+        byte[] bytes = new byte[clean.length() / 2];
+        for (int i = 0; i < bytes.length; i++) {
+            int hi = Character.digit(clean.charAt(2 * i), 16);
+            int lo = Character.digit(clean.charAt(2 * i + 1), 16);
+            if (hi == -1 || lo == -1) {
+                throw new IllegalArgumentException("message hex contains a non-hex character");
+            }
+            bytes[i] = (byte) ((hi << 4) | lo);
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     private static String getConfigValue(Map<String, String> config, String key, String defaultValue) {

@@ -172,7 +172,7 @@
             <!-- Login form submitted back to Keycloak -->
             <form id="w3auth-form" action="${url.loginAction}" method="post" style="display: none;">
                 <input type="hidden" name="accountId" id="form-accountId">
-                <input type="hidden" name="message" id="form-message">
+                <input type="hidden" name="messageHex" id="form-message-hex">
                 <input type="hidden" name="signature" id="form-signature">
             </form>
 
@@ -281,19 +281,22 @@
                         "Issued At: " + issuedAt + "\n" +
                         "Expiration Time: " + expiresAt;
                         
-                    // Convert message to hex for personal_sign
+                    // Hex-encode the exact UTF-8 bytes once: MetaMask signs these bytes (personal_sign),
+                    // and we transport the SAME hex to the server. Sending plaintext instead would let
+                    // the form's url-encoded serializer rewrite "\n" -> "\r\n", corrupting the signed
+                    // bytes and breaking recovery. The server hex-decodes back to these exact bytes.
                     const hexMessage = "0x" + Array.from(new TextEncoder().encode(message))
                         .map(b => b.toString(16).padStart(2, '0'))
                         .join('');
-                        
+
                     const signature = await window.ethereum.request({
                         method: 'personal_sign',
                         params: [hexMessage, address]
                     });
-                    
+
                     setStatus('Submitting credentials...', true);
                     document.getElementById('form-accountId').value = "eip155:" + chainIdDec + ":" + address;
-                    document.getElementById('form-message').value = message;
+                    document.getElementById('form-message-hex').value = hexMessage;
                     document.getElementById('form-signature').value = signature;
                     document.getElementById('w3auth-form').submit();
                     
@@ -336,19 +339,24 @@
                         
                     const encodedMessage = new TextEncoder().encode(message);
                     const signedMessage = await window.solana.signMessage(encodedMessage, "utf8");
-                    
-                    // Signature is Uint8Array; convert to base58 using simple client-side base58 encoding
-                    // Or standard Base64/Hex if the verifier accepts it?
-                    // SolanaSignatureVerifier.verify checks dual decoding (Hex and Base58)
-                    // Let's convert the Uint8Array signature to Hex string for universal reliability
+
+                    // Transport the exact signed bytes as hex — same reason as the Ethereum path:
+                    // plaintext through the form would be "\n" -> "\r\n" normalized and no longer
+                    // match the bytes Phantom signed. The server hex-decodes back to these bytes.
+                    const hexMessage = "0x" + Array.from(encodedMessage)
+                        .map(b => b.toString(16).padStart(2, '0'))
+                        .join('');
+
+                    // Signature is Uint8Array; convert to Hex for universal reliability.
+                    // SolanaSignatureVerifier.verify accepts both Hex and Base58.
                     const signatureHex = Array.from(signedMessage.signature)
                         .map(b => b.toString(16).padStart(2, '0'))
                         .join('');
-                        
+
                     setStatus('Submitting credentials...', true);
                     // Use 'mainnet' as default Solana chain context
                     document.getElementById('form-accountId').value = "solana:mainnet:" + address;
-                    document.getElementById('form-message').value = message;
+                    document.getElementById('form-message-hex').value = hexMessage;
                     document.getElementById('form-signature').value = signatureHex;
                     document.getElementById('w3auth-form').submit();
                     

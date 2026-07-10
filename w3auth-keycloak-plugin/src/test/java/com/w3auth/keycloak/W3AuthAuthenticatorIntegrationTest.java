@@ -197,9 +197,12 @@ class W3AuthAuthenticatorIntegrationTest {
         sigBytes[64] = sigData.getV()[0];
         String signature = "0x" + Numeric.toHexStringNoPrefix(sigBytes);
 
-        // Step 4: POST credentials to action URL
+        // Step 4: POST credentials to action URL. The browser transports the message as hex of
+        // the exact signed bytes (the FTL does this to survive the form serializer's
+        // "\n" -> "\r\n" normalization); mirror that here by sending messageHex, not plaintext.
+        String messageHex = Numeric.toHexString(message.getBytes(StandardCharsets.UTF_8));
         String postBody = "accountId=" + URLEncoder.encode("eip155:1:" + EXPECTED_ADDRESS, StandardCharsets.UTF_8) +
-                "&message=" + URLEncoder.encode(message, StandardCharsets.UTF_8) +
+                "&messageHex=" + URLEncoder.encode(messageHex, StandardCharsets.UTF_8) +
                 "&signature=" + URLEncoder.encode(signature, StandardCharsets.UTF_8);
 
         HttpRequest postRequest = HttpRequest.newBuilder()
