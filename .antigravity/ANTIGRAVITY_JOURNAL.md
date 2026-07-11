@@ -77,6 +77,29 @@ Cross-cutting: rate limiting on challenge requests, audit logging of auth events
 
 ---
 
+## M5 · security fix — Wallet-attribute binding check before setUser   (commit f330174)
+
+**What:** Fixed a username pre-registration attack in `W3AuthAuthenticator.action()`. Added an `else` branch to the `getUserByUsername` / `addUser` block that reads `w3auth_namespace` and `w3auth_address` user attributes and fails closed if either is absent or mismatched, before `context.setUser()` is ever called. Added four tests to `W3AuthAuthenticatorTest` (12 unit tests total, 0 failures; 13 total including the Testcontainers integration test):
+
+- `action_existingUserWithMatchingWalletAttributes_repeatLoginSucceeds` — regression guard for normal repeat login.
+- `action_existingUserWithNoWalletAttributes_preRegisteredAttacker_failsClosed` — the reproduction: form-registered account with no wallet attributes, valid SIWE, must never reach `setUser`.
+- `action_existingUserWithMismatchedAddress_failsClosed` — namespace present, address wrong.
+- `action_existingUserWithDifferentCasingAttribute_matchesCaseInsensitivelyForEip155` — checksummed vs. lowercase address succeeds via `equalsIgnoreCase`.
+
+**Why:** Keycloak usernames are the wallet identity key (`eip155:0xabc...`). A realm with self-registration enabled lets an attacker register that exact username via the normal form before the wallet owner ever logs in. With the old code, the victim's valid SIWE signature would call `context.setUser()` on the attacker's account — binding the victim's wallet login to an account the attacker controls.
+
+The rejected alternative was to auto-claim the pre-registered account by writing the wallet attributes onto it. That was rejected because it silently hands an existing form account to a wallet address without the form-account owner's consent; explicit account linking is a separate, opt-in flow that belongs outside V1 scope.
+
+The error message for a binding failure is deliberately generic (`"Authentication failed."`). Describing the collision — e.g. "account exists but has no wallet binding" — would let an attacker probe which wallet addresses have been pre-registered, turning the guard into an oracle.
+
+EVM address comparison uses `equalsIgnoreCase` because EIP-55 checksum casing is not normalized across wallets; the same key can appear as `0xabc...` from one client and `0xABC...` from another. Solana Base58 is case-sensitive, so that path uses exact equality.
+
+**Learned:** Username-as-identity-key schemes are vulnerable to pre-registration if the username namespace overlaps with any self-service registration path. The fix is not "validate the signature" (we already did) — it is "prove the found account was originally provisioned by this authenticator". Wallet attributes written at first-provision are that proof. Fail closed and say nothing when they are absent.
+
+**Open / next:** Explicit account linking (connecting a pre-existing form account to a wallet identity) would require a separate admin-confirmed flow — deliberately deferred past V1.
+
+---
+
 ## M5 · step 3 — Keycloak Authenticator SPI Integration Tests   (commit 86c783a)
 
 **What:** Implemented an end-to-end integration test suite for the custom Keycloak Authenticator plugin inside `w3auth-keycloak-plugin` utilizing Testcontainers.
