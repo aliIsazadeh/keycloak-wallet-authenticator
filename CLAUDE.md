@@ -16,10 +16,11 @@ AppKit, but the backend must never import or depend on Reown, WalletConnect,
 or any wallet SDK. Future clients may be MetaMask, raw WalletConnect, or a
 custom SDK — the backend treats them all identically.
 
-It ships in two forms: a **standalone Spring Boot REST API**
-(`w3auth-standalone-api`) and a **Keycloak Authenticator SPI plugin**
-(`w3auth-keycloak-plugin`), both built on the same framework-free
-verification engine (`w3auth-core`).
+The product is the **Keycloak Authenticator SPI plugin**
+(`w3auth-keycloak-plugin`). Alongside it the repo ships a **reference example**
+of self-hosting the same engine as a standalone Spring Boot REST API
+(`examples/self-hosted-rest-api`) — a demonstration, not the product. Both are
+built on the same framework-free verification engine (`w3auth-core`).
 
 ## Tech stack
 
@@ -33,7 +34,7 @@ verification engine (`w3auth-core`).
 - Keycloak 25 Authenticator SPI for the IAM plugin (fat JAR, BouncyCastle
   excluded — Keycloak provides it)
 - web3j 4.12.3 — `crypto` in `w3auth-core`, `core` (RPC) in
-  `w3auth-standalone-api` only. The Keycloak plugin deliberately avoids
+  `examples/self-hosted-rest-api` only. The Keycloak plugin deliberately avoids
   web3j-core: `HttpChainClient` implements the `ChainClient` port over
   Java 21's native `HttpClient` to keep Keycloak's classpath clean.
 
@@ -109,7 +110,7 @@ com.w3auth.backend
 └── usecase/         RequestChallenge, VerifyAndAuthenticate, RefreshSession,
                      Logout, AuthEventStore (port)
 
-w3auth-standalone-api — Spring Boot REST application
+examples/self-hosted-rest-api — Spring Boot REST application (reference example, not the product)
 com.w3auth.backend
 ├── api/             REST controllers, request/response DTOs
 ├── config/          composition root: wires use cases as plain beans
@@ -126,7 +127,7 @@ com.w3auth.keycloak
 
 The M5 module split makes the core/framework boundary a compile-time
 guarantee (`w3auth-core` has no Spring on its classpath). The **ArchUnit**
-test (`LayerBoundaryTest` in `w3auth-standalone-api`) still guards the same
+test (`LayerBoundaryTest` in `examples/self-hosted-rest-api`) still guards the same
 rule — core packages must not import Spring, JPA, Redis, or `infrastructure`.
 
 ## How we work together

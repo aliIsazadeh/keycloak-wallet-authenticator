@@ -142,17 +142,29 @@ catalog):
 | Module | Role |
 | --- | --- |
 | `w3auth-core` | Framework-free verification engine: identity, challenge, SIWE/SIWS parsing, signature verification, sessions. No Spring / JPA / Redis on its classpath. |
-| `w3auth-keycloak-plugin` | The Keycloak Authenticator SPI plugin (this README's focus). Fat JAR, BouncyCastle excluded (Keycloak provides it). |
-| `w3auth-standalone-api` | A standalone Spring Boot REST auth API built on the same core, for teams not using Keycloak. |
+| `w3auth-keycloak-plugin` | The Keycloak Authenticator SPI plugin — **the product, and this README's focus**. Fat JAR, BouncyCastle excluded (Keycloak provides it). |
+| `examples/self-hosted-rest-api` | **Reference example, not the product.** A standalone Spring Boot REST auth API built on the same core, showing how to self-host wallet login without Keycloak. See [its README](examples/self-hosted-rest-api/README.md). |
 
-The same verification engine powers both the plugin and the standalone API — the
-architecture is protocol-driven, so no wallet vendor's code ever leaks into it.
+The same verification engine powers both the plugin and the reference REST API —
+the architecture is protocol-driven, so no wallet vendor's code ever leaks into it.
 
 ## Design notes
 
 The deeper reasoning — why identity is modeled as CAIP-10 `namespace:address`, why
 nonces are consumed atomically, the EIP-6492 dispatch ordering, why HS256 for
 short-lived tokens — lives in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Self-hosting without Keycloak (reference example)
+
+Not running Keycloak? The repo ships a small **reference example** that
+demonstrates the *same* verification core (`w3auth-core`) self-hosted as a
+standalone Spring Boot REST API, with its own Postgres/Redis adapters and
+challenge/verify/refresh/logout endpoints. It is a demonstration, **not the
+product** — the Keycloak plugin above remains the headline. If you already run
+Keycloak, ignore this; use the plugin.
+
+See [`examples/self-hosted-rest-api`](examples/self-hosted-rest-api/README.md)
+to run it.
 
 ## License
 

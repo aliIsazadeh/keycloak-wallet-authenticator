@@ -37,8 +37,8 @@ A multi-module Gradle build (Java 21, Kotlin DSL, centralized version catalog):
 | Module | Role |
 | --- | --- |
 | `w3auth-core` | Framework-free Java library: identity, challenge, verification, session, use cases. Depends on web3j `crypto` (signing math) but never Spring / JPA / Redis. |
-| `w3auth-standalone-api` | Spring Boot REST application: API controllers, composition root, infrastructure (JPA / Redis / Flyway / `Web3jChainClient`), Spring Security. |
-| `w3auth-keycloak-plugin` | Keycloak Authenticator SPI plugin (fat JAR). See §7. |
+| `w3auth-keycloak-plugin` | Keycloak Authenticator SPI plugin (fat JAR) — **the product**. See §7. |
+| `examples/self-hosted-rest-api` | **Reference example, not the product.** A Spring Boot REST application built on the same core: API controllers, composition root, infrastructure (JPA / Redis / Flyway / `Web3jChainClient`), Spring Security. Shows how to self-host wallet login without Keycloak. |
 
 Core packages in `w3auth-core`:
 
@@ -52,7 +52,7 @@ Core packages in `w3auth-core`:
 
 The dependency rule — core must not import Spring, JPA, Redis, or infrastructure — is
 enforced twice: by the **module boundary** (`w3auth-core` has no framework on its
-compile classpath) and by an **ArchUnit test** in the standalone API.
+compile classpath) and by an **ArchUnit test** in the self-hosted REST API example.
 
 ## 4. Persistence: ephemeral vs durable (standalone API)
 

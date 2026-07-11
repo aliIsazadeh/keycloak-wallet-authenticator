@@ -47,8 +47,8 @@ version catalog (`gradle/libs.versions.toml`):
 | Module                   | Role                                                           |
 | ------------------------ | -------------------------------------------------------------- |
 | `w3auth-core`            | Framework-free Java library: identity, challenge, verification, session, usecase. Depends on web3j `crypto` (signing math) but never Spring/JPA/Redis. |
-| `w3auth-standalone-api`  | Spring Boot REST application: `api`, `config` (composition root), `infrastructure` (JPA/Redis/Flyway/`Web3jChainClient`), `security`. |
-| `w3auth-keycloak-plugin` | Keycloak Authenticator SPI plugin (fat JAR), see §7a.          |
+| `w3auth-keycloak-plugin` | Keycloak Authenticator SPI plugin (fat JAR) — **the product**, see §7a. |
+| `examples/self-hosted-rest-api` | **Reference example, not the product.** Spring Boot REST application: `api`, `config` (composition root), `infrastructure` (JPA/Redis/Flyway/`Web3jChainClient`), `security`. Self-hosting demo on the same core. |
 
 Core packages in `w3auth-core`:
 
@@ -67,7 +67,7 @@ The dependency rule is now enforced twice:
 
 First by the **module boundary** (`w3auth-core` simply has no framework on its
 compile classpath), and second by the **ArchUnit test** (`LayerBoundaryTest`
-in `w3auth-standalone-api`), which keeps guarding against `infrastructure`
+in `examples/self-hosted-rest-api`), which keeps guarding against `infrastructure`
 imports leaking back into core packages.
 
 **Any further split** (e.g. publishing the wire contract as its own artifact
