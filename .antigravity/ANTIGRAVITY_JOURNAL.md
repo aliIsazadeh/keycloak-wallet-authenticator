@@ -77,6 +77,29 @@ Cross-cutting: rate limiting on challenge requests, audit logging of auth events
 
 ---
 
+## M5 · security fix — Generic client-facing auth errors; log details server-side   (commit 465b981)
+
+**What:** Replaced `"Wallet verification failed: " + e.getMessage()` in `W3AuthAuthenticator.action()`'s catch block with a fixed generic string. Narrowed the catch to `VerificationException | IllegalArgumentException` (the explicitly thrown types) plus a last-resort `Exception` catch-all. Added server-side logging via `org.jboss.logging.Logger` at WARN level: expected failures log the exception class and a 500-char-truncated message; unexpected failures log class name with stack trace. The raw signature, decoded message, and messageHex are never logged.
+
+Test changes (15 total, 0 failures):
+- `action_nonceMismatch_failsFlow`, `action_domainMismatch_failsFlow`, `action_crlfCorruptedBytes_failsSignerMatch` — updated to expect the generic message; the `never-setUser` / `never-success` assertions, which are the actual security assertions, are unchanged.
+- New `action_attackerControlledDomainInException_doesNotReachSetError` (unit) — uses `ArgumentCaptor` to capture the exact `setError` argument and asserts it does not contain the hostile domain substring, independently of any FreeMarker escaping.
+- New `errorMessages_xssPayloadInDomain_renderedPageIsSafe` (integration, Testcontainers) — Step 1 measurement: submits a SIWE with `<script>alert(1)</script>` as the domain, fetches the rendered HTML from the real Keycloak 25.0.2 container, asserts the raw script tag is absent and the generic message is present.
+
+**Why:** Two problems in the old catch block:
+
+1. **Information leak**: `e.getMessage()` for a `VerificationException("Domain mismatch: expected localhost but got <attacker-domain>")` tells a probing client the expected domain, which field failed, and how the server validates it. A `NullPointerException` renders "Wallet verification failed: null" — leaking that an NPE occurred.
+
+2. **Reflected content (defence-in-depth concern)**: The same attacker-controlled string from the exception message was passed to `setError` and rendered via `${message.summary}` in the FTL. The rejected alternative was to HTML-escape the string before passing it to `setError`. That was rejected because it treats the symptom rather than the cause: the real fix is to never allow attacker-controlled content into the error string in the first place. Defence-in-depth from FreeMarker's auto-escaping is a bonus, not the primary control.
+
+**Step 1 measurement (empirical, not assumed):** Before this fix was applied, a Testcontainers run submitted a SIWE message whose domain was `<script>alert(1)</script>`. The rendered page HTML showed the HTML-entity-encoded form `&lt;script&gt;alert(1)&lt;/script&gt;` — confirming Keycloak 25.0.2's FreeMarker templates use the HTML output format and auto-escape `${message.summary}`. XSS through this path was not possible even before the fix. The fix removes the attacker content from `setError` entirely, making both controls active.
+
+**Learned:** "Defence in depth" requires that each layer is a genuine control, not a crutch. Relying solely on FreeMarker escaping to sanitise content that should never have been client-controlled in the first place violates the principle of least privilege for information. The right fix is to remove the content at the source (the catch block); the FreeMarker escaping then provides a second layer that would catch any future regression.
+
+**Open / next:** The `setError` string for the wallet-binding mismatch (pre-registration attack guard, commit f330174) already uses a generic "Authentication failed." string — consistent with this fix. Consider adding a server-side log there too for observability.
+
+---
+
 ## M5 · security fix — Wallet-attribute binding check before setUser   (commit f330174)
 
 **What:** Fixed a username pre-registration attack in `W3AuthAuthenticator.action()`. Added an `else` branch to the `getUserByUsername` / `addUser` block that reads `w3auth_namespace` and `w3auth_address` user attributes and fails closed if either is absent or mismatched, before `context.setUser()` is ever called. Added four tests to `W3AuthAuthenticatorTest` (12 unit tests total, 0 failures; 13 total including the Testcontainers integration test):
