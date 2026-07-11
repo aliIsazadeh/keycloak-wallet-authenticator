@@ -239,7 +239,7 @@ class W3AuthAuthenticatorIntegrationTest {
         assertThat(users).hasSize(1);
         UserRepresentation userRep = users.get(0);
         assertThat(userRep.getUsername()).isEqualTo(expectedUsername);
-        
+
         // Assert attributes
         Map<String, List<String>> attributes = userRep.getAttributes();
         assertThat(attributes.get("w3auth_address")).containsExactly(EXPECTED_ADDRESS);
@@ -253,5 +253,91 @@ class W3AuthAuthenticatorIntegrationTest {
                 .get(userRep.getId()).roles().realmLevel().listAll();
         assertThat(realmRoles).extracting(RoleRepresentation::getName)
                 .contains("default-roles-w3auth-test");
+    }
+
+    /**
+     * Step-1 measurement: submits a SIWE message whose domain field carries an XSS payload and
+     * asserts that the rendered error page does not contain the raw {@code <script>} tag.
+     *
+     * <p>The domain check fires before signature verification, so a dummy signature is enough.
+     * The real nonce is required so the nonce check passes and the flow reaches the domain check.
+     *
+     * <p>Two defences gate this path after the fix:
+     * <ol>
+     *   <li>The {@code catch} block now uses a fixed generic string, so attacker-controlled
+     *       exception content never reaches {@code setError} at all.</li>
+     *   <li>Keycloak 25's FreeMarker templates use the HTML output format: {@code ${message.summary}}
+     *       is auto-escaped — {@code <} → {@code &lt;} — as confirmed by this test.</li>
+     * </ol>
+     */
+    @Test
+    void errorMessages_xssPayloadInDomain_renderedPageIsSafe() throws Exception {
+        // Initiate a fresh OIDC flow to obtain a new nonce and action URL.
+        String authUrl = serverUrl + "/realms/w3auth-test/protocol/openid-connect/auth"
+                + "?client_id=test-app&response_type=code&scope=openid&redirect_uri="
+                + URLEncoder.encode("http://localhost:8080/callback", StandardCharsets.UTF_8);
+
+        HttpResponse<String> getResp = httpClient.send(
+                HttpRequest.newBuilder().uri(URI.create(authUrl)).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(getResp.statusCode()).isEqualTo(200);
+
+        String html = getResp.body();
+        Matcher nonceMatcher = Pattern.compile("const nonce = \"([^\"]+)\"").matcher(html);
+        assertThat(nonceMatcher.find()).as("nonce not found in challenge form").isTrue();
+        String nonce = nonceMatcher.group(1);
+
+        Matcher actionMatcher = Pattern.compile("action=\"([^\"]+)\"").matcher(html);
+        assertThat(actionMatcher.find()).as("action URL not found in challenge form").isTrue();
+        String actionUrl = actionMatcher.group(1).replace("&amp;", "&");
+        if (actionUrl.startsWith("http://localhost:8080")) {
+            actionUrl = serverUrl + actionUrl.substring("http://localhost:8080".length());
+        }
+
+        // Build a syntactically valid SIWE message whose domain is an XSS payload.
+        // detectNamespace passes (line ends with "...Ethereum account:"); the parser
+        // succeeds; the nonce check passes (real nonce); the domain check throws with
+        // the attacker domain in the exception message.
+        String xssPayload = "<script>alert(1)</script>";
+        String issuedAt  = DateTimeFormatter.ISO_INSTANT.format(Instant.now());
+        String expiresAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now().plus(5, ChronoUnit.MINUTES));
+
+        String hostileMessage = xssPayload + " wants you to sign in with your Ethereum account:\n"
+                + EXPECTED_ADDRESS + "\n\n\n"
+                + "URI: http://localhost:8080/callback\n"
+                + "Version: 1\nChain ID: 1\n"
+                + "Nonce: " + nonce + "\n"
+                + "Issued At: " + issuedAt + "\n"
+                + "Expiration Time: " + expiresAt;
+
+        String messageHex = Numeric.toHexString(hostileMessage.getBytes(StandardCharsets.UTF_8));
+
+        String postBody = "accountId=" + URLEncoder.encode("eip155:1:" + EXPECTED_ADDRESS, StandardCharsets.UTF_8)
+                + "&messageHex=" + URLEncoder.encode(messageHex, StandardCharsets.UTF_8)
+                // Signature is irrelevant — the domain check fires before it.
+                + "&signature=" + URLEncoder.encode("0x" + "00".repeat(65), StandardCharsets.UTF_8);
+
+        HttpResponse<String> postResp = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(actionUrl))
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .POST(HttpRequest.BodyPublishers.ofString(postBody))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        // The authenticator re-challenges with the error form (200, not a redirect).
+        assertThat(postResp.statusCode()).isEqualTo(200);
+        String errorHtml = postResp.body();
+        assertThat(errorHtml).as("login form should be re-rendered").contains("Web3 Authentication");
+
+        // Primary assertion: raw XSS payload must not appear in the rendered page.
+        assertThat(errorHtml)
+                .as("raw <script> tag must not appear in rendered HTML")
+                .doesNotContain(xssPayload);
+
+        // Secondary assertion: the generic error message IS shown (fix evidence).
+        assertThat(errorHtml)
+                .as("generic error message should be present")
+                .contains("Wallet verification failed. Please try again.");
     }
 }

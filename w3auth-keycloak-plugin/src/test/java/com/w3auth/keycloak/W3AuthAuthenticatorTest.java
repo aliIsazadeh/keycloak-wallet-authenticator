@@ -22,6 +22,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.mockito.ArgumentCaptor;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -176,7 +180,9 @@ class W3AuthAuthenticatorTest {
 
         authenticator.action(context);
 
-        verify(formsProvider).setError(contains("Nonce mismatch"));
+        // The real point of this test: setUser and success are never called.
+        // The client-facing string must be generic — exception detail stays server-side.
+        verify(formsProvider).setError(eq("Wallet verification failed. Please try again."));
         verify(context).challenge(any(Response.class));
         verify(context, never()).setUser(any());
         verify(context, never()).success();
@@ -273,7 +279,9 @@ class W3AuthAuthenticatorTest {
 
         authenticator.action(context);
 
-        verify(formsProvider).setError(contains("Domain mismatch"));
+        // The real point of this test: the flow is rejected; the client does not see which
+        // field mismatched (that would be an information leak via the error message).
+        verify(formsProvider).setError(eq("Wallet verification failed. Please try again."));
         verify(context).challenge(any(Response.class));
     }
 
@@ -371,8 +379,57 @@ class W3AuthAuthenticatorTest {
 
         authenticator.action(context);
 
-        verify(formsProvider).setError(contains("does not match message address"));
+        verify(formsProvider).setError(eq("Wallet verification failed. Please try again."));
         verify(context).challenge(any(Response.class));
+        verify(context, never()).setUser(any());
+        verify(context, never()).success();
+    }
+
+    /**
+     * Proves that attacker-controlled content from a VerificationException never reaches
+     * the setError argument — regardless of any FreeMarker escaping that may or may not
+     * happen downstream. The ArgumentCaptor captures the raw string before FreeMarker sees it.
+     *
+     * <p>A hostile domain triggers the domain-mismatch VerificationException whose message
+     * embeds the attacker-controlled domain. After the fix the catch block substitutes a
+     * fixed generic string, so the hostile substring can never appear in setError.
+     */
+    @Test
+    void action_attackerControlledDomainInException_doesNotReachSetError() {
+        String nonce = "testNonce123456";
+        sessionNotes.put("w3auth-nonce", nonce);
+
+        String hostileDomain = "<script>alert(document.cookie)</script>";
+        String message = hostileDomain + " wants you to sign in with your Ethereum account:\n" +
+                EXPECTED_ADDRESS + "\n\n\n" +
+                "URI: http://localhost:8080\n" +
+                "Version: 1\nChain ID: 1\n" +
+                "Nonce: " + nonce + "\n" +
+                "Issued At: " + DateTimeFormatter.ISO_INSTANT.format(Instant.now()) + "\n" +
+                "Expiration Time: " + DateTimeFormatter.ISO_INSTANT.format(Instant.now().plus(5, ChronoUnit.MINUTES));
+
+        MultivaluedMap<String, String> formData = new MultivaluedHashMap<>();
+        formData.putSingle("accountId", "eip155:1:" + EXPECTED_ADDRESS);
+        formData.putSingle("messageHex", toHex(message));
+        // Signature is irrelevant — the domain check fires before sig verification.
+        formData.putSingle("signature", "0x" + "00".repeat(65));
+
+        when(request.getDecodedFormParameters()).thenReturn(formData);
+
+        authenticator.action(context);
+
+        ArgumentCaptor<String> errorCaptor = ArgumentCaptor.forClass(String.class);
+        verify(formsProvider).setError(errorCaptor.capture());
+        String actual = errorCaptor.getValue();
+
+        // The attacker-controlled domain must not appear in the string passed to setError.
+        assertFalse(actual.contains(hostileDomain),
+                "hostile domain leaked into setError: " + actual);
+        assertFalse(actual.contains("<script>"),
+                "raw <script> tag reached setError: " + actual);
+        // The fixed generic string must be the exact value — no concatenation, no detail.
+        assertEquals("Wallet verification failed. Please try again.", actual);
+
         verify(context, never()).setUser(any());
         verify(context, never()).success();
     }

@@ -8,6 +8,7 @@ import com.w3auth.backend.verification.*;
 
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
+import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.forms.login.LoginFormsProvider;
@@ -27,6 +28,7 @@ import java.util.Map;
  */
 public class W3AuthAuthenticator implements Authenticator {
 
+    private static final Logger logger = Logger.getLogger(W3AuthAuthenticator.class);
     private static final String NONCE_NOTE = "w3auth-nonce";
 
     @Override
@@ -190,8 +192,17 @@ public class W3AuthAuthenticator implements Authenticator {
             context.getAuthenticationSession().removeAuthNote(NONCE_NOTE);
             context.success();
 
+        } catch (VerificationException | IllegalArgumentException e) {
+            // Log the detail server-side (truncated — message may contain client-derived content).
+            // Never include the raw signature, decoded message, or messageHex in logs.
+            logger.warnf("w3auth: auth rejected [%s]: %.500s",
+                    e.getClass().getSimpleName(),
+                    e.getMessage() != null ? e.getMessage() : "");
+            context.challenge(buildLoginForm(context, "Wallet verification failed. Please try again."));
         } catch (Exception e) {
-            context.challenge(buildLoginForm(context, "Wallet verification failed: " + e.getMessage()));
+            // Unexpected error (NullPointerException, IO failure, etc.): log with stack trace.
+            logger.warn("w3auth: unexpected verification error: " + e.getClass().getName(), e);
+            context.challenge(buildLoginForm(context, "Wallet verification failed. Please try again."));
         }
     }
 
