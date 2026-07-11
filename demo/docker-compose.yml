@@ -8,7 +8,8 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Fat JAR built by :w3auth-keycloak-plugin:jar (BouncyCastle excluded, Keycloak supplies it)
-      - ../w3auth-keycloak-plugin/build/libs/w3auth-keycloak-plugin-1.0.1.jar:/opt/keycloak/providers/w3auth-keycloak-plugin-1.0.1.jar:ro
+      # Mount the whole build/libs directory so any JAR version Keycloak finds there is loaded.
+      # Build first with: ./gradlew :w3auth-keycloak-plugin:jar
+      - ../w3auth-keycloak-plugin/build/libs:/opt/keycloak/providers:ro
       # Demo realm, auto-imported on startup via --import-realm
       - ./realm-export.json:/opt/keycloak/data/import/realm-export.json:ro

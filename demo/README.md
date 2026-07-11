@@ -14,8 +14,9 @@ From the repo root:
 ./gradlew :w3auth-keycloak-plugin:jar
 ```
 
-This produces `w3auth-keycloak-plugin/build/libs/w3auth-keycloak-plugin-1.0.1.jar`,
-which `demo/docker-compose.yml` mounts into Keycloak's `/opt/keycloak/providers/`.
+This produces the fat JAR under `w3auth-keycloak-plugin/build/libs/`.
+`demo/docker-compose.yml` mounts that whole directory into Keycloak's `/opt/keycloak/providers/`,
+so the demo is not coupled to a specific version string — any JAR Gradle writes there is picked up automatically.
 
 ## 2. Start Keycloak
 
