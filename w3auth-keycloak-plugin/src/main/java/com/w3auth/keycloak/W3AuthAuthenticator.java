@@ -161,6 +161,29 @@ public class W3AuthAuthenticator implements Authenticator {
                 user.setAttribute("w3auth_address", List.of(parsed.address()));
                 user.setAttribute("w3auth_namespace", List.of(namespace.name()));
                 user.setAttribute("w3auth_chainId", List.of(parsed.chainId()));
+            } else {
+                // Guard against username pre-registration: a realm with self-registration
+                // enabled lets an attacker create "eip155:0x<victim>" via the normal form
+                // before the victim ever wallet-logs-in. Without this check a valid SIWE
+                // from the victim silently binds to the attacker's account. Require the
+                // wallet-binding attributes that this authenticator writes at first-provision.
+                //
+                // Explicit account linking (form-registered account → wallet) is out of
+                // scope for V1. Do not add auto-claim logic here.
+                String storedNamespace = user.getFirstAttribute("w3auth_namespace");
+                String storedAddress   = user.getFirstAttribute("w3auth_address");
+                boolean namespaceOk = namespace.name().equals(storedNamespace);
+                // EVM addresses are case-insensitive (EIP-55 checksum casing varies across
+                // wallets); Solana Base58 addresses are case-sensitive.
+                boolean addressOk = (namespace == Namespace.SOLANA)
+                        ? parsed.address().equals(storedAddress)
+                        : parsed.address().equalsIgnoreCase(storedAddress);
+                if (!namespaceOk || !addressOk) {
+                    // Generic message: do not tell the client why the binding check failed
+                    // (would reveal whether a pre-registered username collision exists).
+                    context.challenge(buildLoginForm(context, "Authentication failed."));
+                    return;
+                }
             }
 
             context.setUser(user);

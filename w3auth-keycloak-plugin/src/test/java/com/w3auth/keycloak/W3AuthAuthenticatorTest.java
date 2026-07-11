@@ -377,6 +377,169 @@ class W3AuthAuthenticatorTest {
         verify(context, never()).success();
     }
 
+    // -------------------------------------------------------------------------
+    // Wallet-binding security tests (pre-registration attack guard)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Regression guard for normal repeat login. An existing user provisioned by this
+     * authenticator carries both wallet attributes; the flow must accept it.
+     */
+    @Test
+    void action_existingUserWithMatchingWalletAttributes_repeatLoginSucceeds() {
+        String nonce = "testNonce123456";
+        sessionNotes.put("w3auth-nonce", nonce);
+
+        String issuedAt  = DateTimeFormatter.ISO_INSTANT.format(Instant.now());
+        String expiresAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now().plus(5, ChronoUnit.MINUTES));
+
+        String message = "localhost wants you to sign in with your Ethereum account:\n" +
+                EXPECTED_ADDRESS + "\n\n\n" +
+                "URI: http://localhost:8080\n" +
+                "Version: 1\nChain ID: 1\n" +
+                "Nonce: " + nonce + "\n" +
+                "Issued At: " + issuedAt + "\n" +
+                "Expiration Time: " + expiresAt;
+
+        MultivaluedMap<String, String> formData = new MultivaluedHashMap<>();
+        formData.putSingle("accountId", "eip155:1:" + EXPECTED_ADDRESS);
+        formData.putSingle("messageHex", toHex(message));
+        formData.putSingle("signature", signPrefixed(message));
+
+        when(request.getDecodedFormParameters()).thenReturn(formData);
+        when(userProvider.getUserByUsername(realm, "eip155:" + EXPECTED_ADDRESS)).thenReturn(user);
+        when(user.getFirstAttribute("w3auth_namespace")).thenReturn("EIP155");
+        when(user.getFirstAttribute("w3auth_address")).thenReturn(EXPECTED_ADDRESS);
+
+        authenticator.action(context);
+
+        verify(userProvider, never()).addUser(any(), any());
+        verify(context).setUser(user);
+        verify(authSession).removeAuthNote("w3auth-nonce");
+        verify(context).success();
+    }
+
+    /**
+     * Pre-registration attack reproduction. A form-registered account that uses the
+     * wallet identity key as its username will have NO w3auth_* attributes. Even though
+     * the victim signs a valid SIWE message, the authenticator must fail closed and
+     * never call setUser/success on the attacker's account.
+     */
+    @Test
+    void action_existingUserWithNoWalletAttributes_preRegisteredAttacker_failsClosed() {
+        String nonce = "testNonce123456";
+        sessionNotes.put("w3auth-nonce", nonce);
+
+        String issuedAt  = DateTimeFormatter.ISO_INSTANT.format(Instant.now());
+        String expiresAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now().plus(5, ChronoUnit.MINUTES));
+
+        String message = "localhost wants you to sign in with your Ethereum account:\n" +
+                EXPECTED_ADDRESS + "\n\n\n" +
+                "URI: http://localhost:8080\n" +
+                "Version: 1\nChain ID: 1\n" +
+                "Nonce: " + nonce + "\n" +
+                "Issued At: " + issuedAt + "\n" +
+                "Expiration Time: " + expiresAt;
+
+        MultivaluedMap<String, String> formData = new MultivaluedHashMap<>();
+        formData.putSingle("accountId", "eip155:1:" + EXPECTED_ADDRESS);
+        formData.putSingle("messageHex", toHex(message));
+        formData.putSingle("signature", signPrefixed(message));
+
+        when(request.getDecodedFormParameters()).thenReturn(formData);
+        // Attacker's pre-registered account: exists by username, has no wallet attributes.
+        when(userProvider.getUserByUsername(realm, "eip155:" + EXPECTED_ADDRESS)).thenReturn(user);
+        when(user.getFirstAttribute("w3auth_namespace")).thenReturn(null);
+        when(user.getFirstAttribute("w3auth_address")).thenReturn(null);
+
+        authenticator.action(context);
+
+        verify(context, never()).setUser(any());
+        verify(context, never()).success();
+        verify(context).challenge(any(Response.class));
+        // Generic message: must not describe the collision to the client.
+        verify(formsProvider).setError(eq("Authentication failed."));
+    }
+
+    /**
+     * Existing user has a w3auth_address attribute, but it belongs to a different wallet
+     * (e.g., an account that was incorrectly linked or tampered with). Must fail closed.
+     */
+    @Test
+    void action_existingUserWithMismatchedAddress_failsClosed() {
+        String nonce = "testNonce123456";
+        sessionNotes.put("w3auth-nonce", nonce);
+
+        String issuedAt  = DateTimeFormatter.ISO_INSTANT.format(Instant.now());
+        String expiresAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now().plus(5, ChronoUnit.MINUTES));
+
+        String message = "localhost wants you to sign in with your Ethereum account:\n" +
+                EXPECTED_ADDRESS + "\n\n\n" +
+                "URI: http://localhost:8080\n" +
+                "Version: 1\nChain ID: 1\n" +
+                "Nonce: " + nonce + "\n" +
+                "Issued At: " + issuedAt + "\n" +
+                "Expiration Time: " + expiresAt;
+
+        MultivaluedMap<String, String> formData = new MultivaluedHashMap<>();
+        formData.putSingle("accountId", "eip155:1:" + EXPECTED_ADDRESS);
+        formData.putSingle("messageHex", toHex(message));
+        formData.putSingle("signature", signPrefixed(message));
+
+        when(request.getDecodedFormParameters()).thenReturn(formData);
+        when(userProvider.getUserByUsername(realm, "eip155:" + EXPECTED_ADDRESS)).thenReturn(user);
+        when(user.getFirstAttribute("w3auth_namespace")).thenReturn("EIP155");
+        // Attribute carries a different address — the binding check must reject this.
+        when(user.getFirstAttribute("w3auth_address")).thenReturn("0x000000000000000000000000000000000000dead");
+
+        authenticator.action(context);
+
+        verify(context, never()).setUser(any());
+        verify(context, never()).success();
+        verify(context).challenge(any(Response.class));
+        verify(formsProvider).setError(eq("Authentication failed."));
+    }
+
+    /**
+     * EIP-55 checksum casing: one wallet stores the address lowercase, another as
+     * checksummed mixed-case. equalsIgnoreCase must bridge the gap so the same wallet
+     * owner is never locked out by a casing inconsistency between sessions.
+     */
+    @Test
+    void action_existingUserWithDifferentCasingAttribute_matchesCaseInsensitivelyForEip155() {
+        String nonce = "testNonce123456";
+        sessionNotes.put("w3auth-nonce", nonce);
+
+        String issuedAt  = DateTimeFormatter.ISO_INSTANT.format(Instant.now());
+        String expiresAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now().plus(5, ChronoUnit.MINUTES));
+
+        // Message (and therefore parsed.address()) uses the canonical lowercase form.
+        String message = "localhost wants you to sign in with your Ethereum account:\n" +
+                EXPECTED_ADDRESS + "\n\n\n" +
+                "URI: http://localhost:8080\n" +
+                "Version: 1\nChain ID: 1\n" +
+                "Nonce: " + nonce + "\n" +
+                "Issued At: " + issuedAt + "\n" +
+                "Expiration Time: " + expiresAt;
+
+        MultivaluedMap<String, String> formData = new MultivaluedHashMap<>();
+        formData.putSingle("accountId", "eip155:1:" + EXPECTED_ADDRESS);
+        formData.putSingle("messageHex", toHex(message));
+        formData.putSingle("signature", signPrefixed(message));
+
+        when(request.getDecodedFormParameters()).thenReturn(formData);
+        when(userProvider.getUserByUsername(realm, "eip155:" + EXPECTED_ADDRESS)).thenReturn(user);
+        when(user.getFirstAttribute("w3auth_namespace")).thenReturn("EIP155");
+        // Attribute was stored in a previous session using a checksummed/uppercase form.
+        when(user.getFirstAttribute("w3auth_address")).thenReturn(EXPECTED_ADDRESS.toUpperCase());
+
+        authenticator.action(context);
+
+        verify(userProvider, never()).addUser(any(), any());
+        verify(context).setUser(user);
+        verify(context).success();
+    }
+
     private static String signPrefixed(String message) {
         ECKeyPair keyPair = ECKeyPair.create(Numeric.hexStringToByteArray(PRIVATE_KEY));
         Sign.SignatureData sigData = Sign.signPrefixedMessage(message.getBytes(StandardCharsets.UTF_8), keyPair);
