@@ -114,11 +114,21 @@ On the authenticator's config, set:
 
 | Setting | Key | Default | Notes |
 | --- | --- | --- | --- |
-| Expected Domain | `expected-domain` | `localhost` | Must match the SIWE/SIWS `domain`. This is the anti-phishing control — set it to your real domain in production. |
+| Expected Domain | `expected-domain` | `localhost:8080` | Must match the SIWE/SIWS `domain`. This is the anti-phishing control — set it to your real domain in production. |
 | Expected URI | `expected-uri` | `http://localhost:8080` | Must match the message `uri`. |
 | Ethereum RPC URL | `ethereum-rpc-url` | *(empty)* | JSON-RPC endpoint for EIP-1271 / EIP-6492 verification. **Leave empty and smart-contract wallets are disabled — EVM falls back to EOA-only.** |
 
 That's it. Users can now log in with a wallet.
+
+> **Configuration: `expected-domain` must be host:port, exactly.** EIP-4361
+> requires the SIWE/SIWS `domain` field to equal the requesting page's origin
+> authority — the host, plus the port when it's non-default — exactly as it
+> appears in the browser's address bar. `expected-domain` must match that,
+> not just the bare hostname. If it's wrong, the wallet doesn't error clearly;
+> you'll see something like *"the domain in the sign-in message does not
+> match the requesting app's origin"* with no mention of Keycloak or this
+> plugin. Example: serving on `http://localhost:8080` needs
+> `expected-domain = localhost:8080`, not `localhost`.
 
 ## Security model
 

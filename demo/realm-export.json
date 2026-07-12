@@ -46,7 +46,7 @@
     {
       "alias": "wallet-demo-config",
       "config": {
-        "expected-domain": "localhost",
+        "expected-domain": "localhost:8080",
         "expected-uri": "http://localhost:8080"
       }
     }

@@ -22,9 +22,13 @@ public class W3AuthAuthenticatorFactory implements AuthenticatorFactory {
             new ProviderConfigProperty(
                     "expected-domain",
                     "Expected Domain",
-                    "The domain name that must match the domain parameter in SIWE/SIWS messages.",
+                    "Must equal the browser-facing origin authority exactly as it appears in the "
+                            + "address bar: host, plus port when non-default (e.g. \"auth.example.com\" "
+                            + "for https on 443, \"localhost:8080\" for this demo). Wallets enforce "
+                            + "EIP-4361 domain-binding and reject the sign-in message if this does not "
+                            + "match the requesting page's origin exactly.",
                     ProviderConfigProperty.STRING_TYPE,
-                    "localhost"
+                    "localhost:8080"
             ),
             new ProviderConfigProperty(
                     "expected-uri",

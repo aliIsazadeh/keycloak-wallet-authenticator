@@ -40,11 +40,20 @@ This redirects into the realm's browser flow, which is bound entirely to the
 Web3 Wallet Authenticator — you'll land straight on the wallet-signature
 login page. Connect a wallet, sign the SIWE/SIWS message, and you're in.
 
-- **Expected domain:** `localhost`
+- **Expected domain:** `localhost:8080`
 - **Expected URI:** `http://localhost:8080`
 
 (These match the authenticator's defaults, set explicitly in
 `realm-export.json` under `authenticatorConfig`.)
+
+> **Configuration:** `expected-domain` must equal the browser-facing origin
+> authority exactly — host, plus port when non-default — because wallets
+> enforce EIP-4361 domain-binding. Since Keycloak here is served at
+> `localhost:8080`, `expected-domain` must be `localhost:8080`, not bare
+> `localhost` — otherwise the wallet rejects the sign-in with an error like
+> *"the domain in the sign-in message does not match the requesting app's
+> origin"*, which gives no hint that the fix is in Keycloak's authenticator
+> config.
 
 ## Note: account clients are intentionally not in the realm export
 
