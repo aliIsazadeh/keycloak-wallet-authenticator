@@ -11,8 +11,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.Base64;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -56,10 +56,10 @@ class RequestChallengeTest {
 
     @Test
     void execute_generatesDifferentNonceOnEachCall() {
-        // Nonce is base64url-no-pad over 16 raw bytes (128-bit CSPRNG).
+        // Nonce is lowercase hex over 16 raw bytes (128-bit CSPRNG); see Nonce.generate().
         // The byte-length assertion guards against a future weakening of Nonce.generate()
         // (e.g. shorter nonce or a counter) that uniqueness alone would not catch.
-        byte[] raw = Base64.getUrlDecoder().decode(useCase.execute(ACCOUNT).nonce());
+        byte[] raw = HexFormat.of().parseHex(useCase.execute(ACCOUNT).nonce());
         assertThat(raw).hasSize(16); // 128-bit CSPRNG nonce; uniqueness != unpredictability
 
         // 100 draws: collision probability with 128-bit nonce is negligible (~2e-27).
