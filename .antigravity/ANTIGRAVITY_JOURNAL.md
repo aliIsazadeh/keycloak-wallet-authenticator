@@ -77,6 +77,18 @@ Cross-cutting: rate limiting on challenge requests, audit logging of auth events
 
 ---
 
+## M5 · bug fix — Hex-encode nonce for EIP-4361 alphanumeric grammar   (commit 1684c23)
+
+**What:** `Nonce.generate()` (`w3auth-core`) changed from base64url-no-pad to lowercase-hex encoding of the same 16 CSPRNG bytes, via `HexFormat.of().formatHex(bytes)` instead of `Base64.getUrlEncoder()`. Output is now 32 alphanumeric hex characters instead of a base64url string that could contain `-` or `_`. `NonceTest` was rewritten: the entropy assertion now hex-decodes and checks the byte length is exactly 16, and a new `matchesEip4361AlphanumericNonceGrammar` test asserts the nonce matches `^[A-Za-z0-9]{8,}$` — the direct regression guard for this bug, named so its intent is unambiguous. `RequestChallengeTest.execute_generatesDifferentNonceOnEachCall` also hardcoded the base64url decode and was updated to hex-decode; it surfaced as a real (not hypothetical) breakage once the fix landed, confirming it was actually exercising the encoding, not just uniqueness. All 145 `w3auth-core` tests pass (`w3auth-core/build/reports/tests/test/index.html`), including the untouched SIWE/SIWS factory and parser suites, which pass literal nonce strings and were unaffected.
+
+**Why:** EIP-4361 defines the SIWE nonce grammar as `nonce = 8*( ALPHA / DIGIT )` — plain ASCII alphanumeric, no `-` or `_`. Base64url's URL-safe alphabet substitutes `+`/`/` for `-`/`_`, so a CSPRNG draw could (and, live, did) produce a nonce containing a hyphen. A strict wallet client rejected the resulting SIWE message outright as invalid formatting; a hex nonce was accepted. The rejected alternative was to keep base64url and just re-roll on the rare draw that contains `-`/`_` — rejected because it treats the symptom (occasional bad char) rather than the cause (wrong grammar for the protocol), and would leave a latent, low-frequency wallet-compatibility bug for the next chain-agnostic encoding used elsewhere. Hex-encoding the same 16 bytes keeps the full 128 bits of entropy and is alphanumeric by construction — no retry loop needed.
+
+**Learned:** A value that is protocol-facing (signed into a message a wallet will parse against its own ABNF grammar) must be validated against that protocol's grammar, not just against "did it decode back to N bytes." The old test proved entropy but never proved SIWE-compliance; the charset itself was the bug, and only an explicit charset-guard test (rather than a byte-length round-trip) pins it. Encoding choices for anything a third-party parser will consume should default to the narrowest safe alphabet the spec allows, not the encoding that happens to be idiomatic in the language's standard library.
+
+**Open / next:** SIWS (Solana) nonces go through the same `Nonce.generate()` — worth confirming Solana wallet clients have no stricter grammar of their own; none is known to exist today. No other call site assumed base64url output (checked: `RedisChallengeStoreTest` and `RequestChallenge` treat the nonce as an opaque key).
+
+---
+
 ## M5 · security fix — Generic client-facing auth errors; log details server-side   (commit 465b981)
 
 **What:** Replaced `"Wallet verification failed: " + e.getMessage()` in `W3AuthAuthenticator.action()`'s catch block with a fixed generic string. Narrowed the catch to `VerificationException | IllegalArgumentException` (the explicitly thrown types) plus a last-resort `Exception` catch-all. Added server-side logging via `org.jboss.logging.Logger` at WARN level: expected failures log the exception class and a 500-char-truncated message; unexpected failures log class name with stack trace. The raw signature, decoded message, and messageHex are never logged.
