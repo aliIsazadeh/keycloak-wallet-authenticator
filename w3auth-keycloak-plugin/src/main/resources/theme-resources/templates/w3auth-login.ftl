@@ -233,6 +233,59 @@
             const domain = "${expectedDomain}";
             const uri = "${expectedUri}";
 
+            // Keccak-256 (BigInt lanes) + EIP-55 checksum. Verified against the official EIP-55
+            // test vectors. Self-contained; no external dependency (security-sensitive login page).
+            function w3authKeccak256(bytes) {
+              const RC = [0x0000000000000001n,0x0000000000008082n,0x800000000000808an,0x8000000080008000n,
+                0x000000000000808bn,0x0000000080000001n,0x8000000080008081n,0x8000000000008009n,
+                0x000000000000008an,0x0000000000000088n,0x0000000080008009n,0x000000008000000an,
+                0x000000008000808bn,0x800000000000008bn,0x8000000000008089n,0x8000000000008003n,
+                0x8000000000008002n,0x8000000000000080n,0x000000000000800an,0x800000008000000an,
+                0x8000000080008081n,0x8000000000008080n,0x0000000080000001n,0x8000000080008008n];
+              const R = [[0,36,3,41,18],[1,44,10,45,2],[62,6,43,15,61],[28,55,25,21,56],[27,20,39,8,14]];
+              const MASK = (1n<<64n)-1n;
+              const rotl = (x,n)=>{n=BigInt(n)%64n; return ((x<<n)|(x>>(64n-n)))&MASK;};
+              let S = Array.from({length:5},()=>[0n,0n,0n,0n,0n]);
+              const rate = 136;
+              const input = Array.from(bytes);
+              const padLen = rate - (input.length % rate);
+              const padded = input.slice();
+              if (padLen === 1) { padded.push(0x81); }
+              else { padded.push(0x01); for (let i=0;i<padLen-2;i++) padded.push(0x00); padded.push(0x80); }
+              for (let off=0; off<padded.length; off+=rate) {
+                for (let i=0;i<rate/8;i++){
+                  let lane=0n;
+                  for (let j=0;j<8;j++) lane |= BigInt(padded[off+i*8+j]) << (8n*BigInt(j));
+                  S[i%5][Math.floor(i/5)] ^= lane;
+                }
+                for (let round=0; round<24; round++){
+                  const C=[0n,0n,0n,0n,0n];
+                  for (let x=0;x<5;x++) C[x]=S[x][0]^S[x][1]^S[x][2]^S[x][3]^S[x][4];
+                  const D=[0n,0n,0n,0n,0n];
+                  for (let x=0;x<5;x++) D[x]=C[(x+4)%5]^rotl(C[(x+1)%5],1);
+                  for (let x=0;x<5;x++) for(let y=0;y<5;y++) S[x][y]^=D[x];
+                  const B=Array.from({length:5},()=>[0n,0n,0n,0n,0n]);
+                  for (let x=0;x<5;x++) for(let y=0;y<5;y++) B[y][(2*x+3*y)%5]=rotl(S[x][y],R[x][y]);
+                  for (let x=0;x<5;x++) for(let y=0;y<5;y++) S[x][y]=B[x][y]^((~B[(x+1)%5][y])&B[(x+2)%5][y]);
+                  S[0][0]^=RC[round];
+                }
+              }
+              const out=[];
+              outer: for (let i=0;i<rate/8 && out.length<32;i++){
+                let lane=S[i%5][Math.floor(i/5)];
+                for (let j=0;j<8;j++){ out.push(Number((lane>>(8n*BigInt(j)))&0xffn)); if(out.length===32) break outer; }
+              }
+              return out;
+            }
+            function w3authToChecksumAddress(addr) {
+              const a = addr.toLowerCase().replace(/^0x/,'');
+              if (!/^[0-9a-f]{40}$/.test(a)) throw new Error('invalid EVM address');
+              const hashHex = w3authKeccak256(new TextEncoder().encode(a)).map(b=>b.toString(16).padStart(2,'0')).join('');
+              let out = '0x';
+              for (let i=0;i<a.length;i++) out += (parseInt(hashHex[i],16) >= 8) ? a[i].toUpperCase() : a[i];
+              return out;
+            }
+
             function setStatus(text, loading = false) {
                 document.getElementById('w3auth-status-text').innerText = text;
                 document.getElementById('w3auth-spinner').style.display = loading ? 'block' : 'none';
@@ -259,7 +312,8 @@
                     setStatus('Connecting wallet...', true);
                     const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
                     const address = accounts[0];
-                    
+                    const checksummedAddress = w3authToChecksumAddress(address);
+
                     setStatus('Detecting chain ID...', true);
                     const chainIdHex = await window.ethereum.request({ method: 'eth_chainId' });
                     const chainIdDec = parseInt(chainIdHex, 16).toString();
@@ -270,9 +324,9 @@
                     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min expiry
                     
                     // Construct SIWE format string exactly matching the SiweMessageParser specification
-                    const message = 
+                    const message =
                         domain + " wants you to sign in with your Ethereum account:\n" +
-                        address + "\n\n" +
+                        checksummedAddress + "\n\n" +
                         "Sign in to Keycloak.\n\n" +
                         "URI: " + uri + "\n" +
                         "Version: 1\n" +
@@ -295,7 +349,7 @@
                     });
 
                     setStatus('Submitting credentials...', true);
-                    document.getElementById('form-accountId').value = "eip155:" + chainIdDec + ":" + address;
+                    document.getElementById('form-accountId').value = "eip155:" + chainIdDec + ":" + checksummedAddress;
                     document.getElementById('form-message-hex').value = hexMessage;
                     document.getElementById('form-signature').value = signature;
                     document.getElementById('w3auth-form').submit();
