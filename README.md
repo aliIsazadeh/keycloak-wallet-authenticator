@@ -130,6 +130,24 @@ That's it. Users can now log in with a wallet.
 > plugin. Example: serving on `http://localhost:8080` needs
 > `expected-domain = localhost:8080`, not `localhost`.
 
+### Wallet-user profile data
+
+Users provisioned through wallet login get placeholder profile data: first name
+`"Wallet"`, last name set to the wallet's address, and a non-deliverable email
+(`<address>@wallet.invalid`) with `emailVerified` set to `true`. This is
+deliberate — Keycloak's default declarative user profile requires
+first name/last name/email, and a bare user without them gets diverted to an
+"Update Account Information" screen after a valid wallet signature, defeating
+the point of wallet-only login. The placeholders keep login to one round trip
+on any realm, with no extra realm configuration required.
+
+If you want to collect a **real** email or name from wallet users instead —
+for example to send them account notifications — the plugin only sets these
+placeholders once, at first provisioning; it never overwrites them on later
+logins. Update the user's profile yourself afterward (admin console, Admin
+REST API, or your own post-login flow), or adjust your realm's **User
+profile** configuration to require the fields you actually want collected.
+
 ## Security model
 
 - **Domain binding** is enforced — a signature valid for another site's domain is
