@@ -163,6 +163,25 @@ public class W3AuthAuthenticator implements Authenticator {
                 user.setAttribute("w3auth_address", List.of(parsed.address()));
                 user.setAttribute("w3auth_namespace", List.of(namespace.name()));
                 user.setAttribute("w3auth_chainId", List.of(parsed.chainId()));
+
+                // Keycloak 25's default declarative user profile requires firstName /
+                // lastName / email for the "user" role. A bare wallet-provisioned user has
+                // none of those, which trips the dynamic VERIFY_PROFILE required action and
+                // diverts a successful wallet login to an "Update Account Information" form
+                // on any realm an operator hasn't customized — see
+                // docs/investigation-stock-realm-required-actions.md. Removing pending
+                // required actions on the user does not help: VERIFY_PROFILE is evaluated
+                // from profile completeness at login time, not read off a static per-user
+                // flag (confirmed empirically — see this fix's commit message). Completing
+                // the profile is what actually satisfies the check. These values are
+                // deliberately address-derived placeholders, not fabricated human data, so
+                // an operator looking at the admin console can tell at a glance they're
+                // synthetic. emailVerified=true is set defensively in case an operator has
+                // also turned on the realm's separate verifyEmail setting.
+                user.setFirstName("Wallet");
+                user.setLastName(account.address());
+                user.setEmail(account.address() + "@wallet.invalid");
+                user.setEmailVerified(true);
             } else {
                 // Guard against username pre-registration: a realm with self-registration
                 // enabled lets an attacker create "eip155:0x<victim>" via the normal form
