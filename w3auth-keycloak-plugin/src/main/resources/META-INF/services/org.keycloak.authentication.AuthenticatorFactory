@@ -1,1 +1,2 @@
 com.w3auth.keycloak.W3AuthAuthenticatorFactory
+com.w3auth.keycloak.W3AuthDirectGrantAuthenticatorFactory

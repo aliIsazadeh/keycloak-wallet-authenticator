@@ -18,6 +18,11 @@ dependencies {
     // Web3j crypto required for signing test vectors
     testImplementation(libs.web3j.crypto)
 
+    // BouncyCastle Ed25519 required for signing Solana (SIWS) test vectors — mirrors the
+    // web3j.crypto line above for the EVM side. Excluded from the packaged fat JAR (see
+    // tasks.jar below); this is test-compile/runtime only.
+    testImplementation(libs.bouncycastle.bcprov)
+
     // Test dependencies matching standalone-api to align the Testcontainers runtime environment
     testImplementation("org.springframework.boot:spring-boot-starter-test:${libs.plugins.spring.boot.get().version.requiredVersion}")
     testImplementation("org.springframework.boot:spring-boot-testcontainers:${libs.plugins.spring.boot.get().version.requiredVersion}")
@@ -47,7 +52,18 @@ tasks.jar {
 tasks.test {
     // Force Gradle to package the fat JAR before running integration tests
     dependsOn(tasks.jar)
-    
+
     // Pass the absolute path of the built fat JAR to the test runner
     systemProperty("plugin.jar.path", tasks.jar.get().archiveFile.get().asFile.absolutePath)
+
+    // Several test classes here each spin up their own Keycloak Testcontainer
+    // (W3AuthAuthenticatorIntegrationTest, StockRealmLoginRegressionTest,
+    // W3AuthChallengeEndpointIntegrationTest). Gradle's default maxParallelForks
+    // scales with core count, so on a high-core-count host it forks many
+    // concurrent 512m test JVMs that each try to launch a Keycloak container at
+    // the same time, exhausting native memory (observed as hs_err_pid crash
+    // dumps with "Native memory allocation (mmap) failed to map ... G1 virtual
+    // space"). Run this module's tests in a single fork with a larger heap.
+    maxParallelForks = 1
+    maxHeapSize = "2g"
 }
