@@ -8,7 +8,7 @@ subprojects {
     apply(plugin = "java")
 
     group = "com.w3auth"
-    version = "1.0.3"
+    version = "1.1.0"
 
     java {
         toolchain {
