@@ -18,6 +18,11 @@ dependencies {
     // Web3j crypto required for signing test vectors
     testImplementation(libs.web3j.crypto)
 
+    // BouncyCastle Ed25519 required for signing Solana (SIWS) test vectors — mirrors the
+    // web3j.crypto line above for the EVM side. Excluded from the packaged fat JAR (see
+    // tasks.jar below); this is test-compile/runtime only.
+    testImplementation(libs.bouncycastle.bcprov)
+
     // Test dependencies matching standalone-api to align the Testcontainers runtime environment
     testImplementation("org.springframework.boot:spring-boot-starter-test:${libs.plugins.spring.boot.get().version.requiredVersion}")
     testImplementation("org.springframework.boot:spring-boot-testcontainers:${libs.plugins.spring.boot.get().version.requiredVersion}")
