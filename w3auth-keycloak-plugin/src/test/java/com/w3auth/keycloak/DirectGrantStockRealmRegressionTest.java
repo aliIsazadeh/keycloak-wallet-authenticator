@@ -47,14 +47,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 class DirectGrantStockRealmRegressionTest {
 
-    // Hardhat/Anvil's well-known default account #1 — deliberately NOT the address used by
+    // A freshly generated keypair, deliberately NOT the address used by
     // W3AuthDirectGrantIntegrationTest, so this exercises a first-time login (user == null
     // provisioning branch, where the profile-completion fix lives) rather than an
-    // already-provisioned user hitting the else-branch.
+    // already-provisioned user hitting the else-branch. Generated (not hand-transcribed from a
+    // well-known test vector) to avoid the single-hex-digit transcription error that class of
+    // constant is prone to (see the M5 EIP-55 golden-vector journal entry for the same lesson).
     private static final String PRIVATE_KEY =
-            "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690";
+            "ff5a34907fe0d6803462f67c86c7c41aea198beeca82da3dcd54770e1633222b";
     private static final String EXPECTED_ADDRESS =
-            "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
+            "0x38f07f351900ffaac11c92d372394f9cb6060d64";
 
     private static final String REALM = "w3auth-direct-grant-stock-realm-test";
     private static final String CLIENT_ID = "native-test-client";
