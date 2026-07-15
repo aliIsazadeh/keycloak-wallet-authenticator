@@ -39,6 +39,11 @@ out/
 
 ### Claude Code ###
 .claude/settings.local.json
+.claude/launch.json
+
+### JVM crash dumps (native OOM during local test runs)
+hs_err_pid*
+replay_pid*
 
 ### Internal scratch (not for publication)
 _to_delete/
