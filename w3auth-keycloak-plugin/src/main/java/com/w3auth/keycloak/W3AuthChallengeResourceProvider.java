@@ -57,8 +57,15 @@ public class W3AuthChallengeResourceProvider implements RealmResourceProvider {
     static final long NONCE_TTL_SECONDS = 300L;
     static final String NONCE_KEY_PREFIX = "w3auth.nonce.";
 
-    private static final String DEFAULT_DOMAIN = "localhost";
-    private static final String DEFAULT_URI = "http://localhost:8080";
+    // Realm-attribute keys — the only config surface for this unauthenticated resource (no
+    // AuthenticatorConfigModel context). W3AuthDirectGrantAuthenticator reads the SAME keys via
+    // realmAttr() below so a message this endpoint builds and the direct-grant authenticator that
+    // verifies it always agree on expected domain/uri — see STEP 3 in the v1.1 direct-grant plan.
+    static final String REALM_ATTR_DOMAIN = "w3auth.expected-domain";
+    static final String REALM_ATTR_URI = "w3auth.expected-uri";
+
+    static final String DEFAULT_DOMAIN = "localhost";
+    static final String DEFAULT_URI = "http://localhost:8080";
 
     private final KeycloakSession session;
 
@@ -110,8 +117,8 @@ public class W3AuthChallengeResourceProvider implements RealmResourceProvider {
         }
 
         RealmModel realm = session.getContext().getRealm();
-        String domain = realmAttr(realm, "w3auth.expected-domain", DEFAULT_DOMAIN);
-        String uri = realmAttr(realm, "w3auth.expected-uri", DEFAULT_URI);
+        String domain = realmAttr(realm, REALM_ATTR_DOMAIN, DEFAULT_DOMAIN);
+        String uri = realmAttr(realm, REALM_ATTR_URI, DEFAULT_URI);
 
         String nonce = Nonce.generate();
         Instant issuedAt = Instant.now();
@@ -153,7 +160,7 @@ public class W3AuthChallengeResourceProvider implements RealmResourceProvider {
 
     // --- helpers ---
 
-    private static String realmAttr(RealmModel realm, String key, String defaultValue) {
+    static String realmAttr(RealmModel realm, String key, String defaultValue) {
         String val = realm.getAttribute(key);
         return (val == null || val.isBlank()) ? defaultValue : val.trim();
     }
