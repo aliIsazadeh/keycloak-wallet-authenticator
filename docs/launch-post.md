@@ -98,6 +98,8 @@ session context, not identity. The Keycloak username is the canonical
 
 ## Using it
 
+Grab `w3auth-keycloak-plugin-1.0.2.jar` from the [latest release](https://github.com/aliIsazadeh/keycloak-wallet-authenticator/releases/latest) — CI-built, with a SHA-256 checksum — or build from source:
+
 ```bash
 # build
 ./gradlew :w3auth-keycloak-plugin:jar

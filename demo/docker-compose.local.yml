@@ -1,0 +1,24 @@
+# Wallet-login demo using a LOCALLY BUILT plugin JAR (dev workflow).
+#
+# Build first, from the repo root:
+#   ./gradlew :w3auth-keycloak-plugin:jar
+# then:
+#   docker compose -f demo/docker-compose.local.yml up
+#
+# Prefer the zero-build demo? Use docker-compose.yml — it downloads the
+# released JAR and needs no Java toolchain.
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0.2
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount the whole build/libs directory so any JAR version Keycloak finds there is loaded.
+      - ../w3auth-keycloak-plugin/build/libs:/opt/keycloak/providers:ro
+      # Demo realm, auto-imported on startup via --import-realm
+      - ./realm-export.json:/opt/keycloak/data/import/realm-export.json:ro

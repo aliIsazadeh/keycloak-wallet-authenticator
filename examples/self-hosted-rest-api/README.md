@@ -38,12 +38,12 @@ the smart-contract paths, a chain) automatically — Docker must be running:
 ./gradlew :examples:self-hosted-rest-api:test
 ```
 
-**Locally**, bring up Postgres + Redis with the root `docker-compose.yml`, then
-run the app:
+**Locally**, bring up Postgres + Redis with this example's `docker-compose.yml`,
+then run the app:
 
 ```bash
 # from the repo root
-docker compose up -d                       # starts postgres + redis
+docker compose -f examples/self-hosted-rest-api/docker-compose.yml up -d   # starts postgres + redis
 ./gradlew :examples:self-hosted-rest-api:bootRun
 ```
 

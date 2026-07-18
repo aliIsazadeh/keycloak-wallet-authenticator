@@ -55,3 +55,6 @@ _claude-skills-update/
 
 ### Unrelated installer — belongs to codebase-memory-mcp, not this project
 /install.ps1
+
+/.antigravity/
+/ANTIGRAVITY.md

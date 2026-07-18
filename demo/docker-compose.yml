@@ -1,6 +1,35 @@
+# Zero-build wallet-login demo.
+#
+#   docker compose -f demo/docker-compose.yml up
+#
+# Downloads the released plugin JAR from GitHub, then starts Keycloak 25 with
+# the wallet-demo realm imported. No Java or Gradle required — Docker only.
+#
+# Building the plugin from source instead? Use docker-compose.local.yml.
+#
+# Override the plugin version with:  W3AUTH_VERSION=1.1.0 docker compose ... up
+
 services:
+  plugin-download:
+    image: curlimages/curl:8.10.1
+    # The image's default user can't write to the root-owned named volume
+    user: root
+    command:
+      - sh
+      - -c
+      - >
+        rm -f /providers/w3auth-keycloak-plugin-*.jar &&
+        curl -fSL --retry 3 -o /providers/w3auth-keycloak-plugin-${W3AUTH_VERSION:-1.1.0}.jar
+        https://github.com/aliIsazadeh/keycloak-wallet-authenticator/releases/download/v${W3AUTH_VERSION:-1.1.0}/w3auth-keycloak-plugin-${W3AUTH_VERSION:-1.1.0}.jar
+        && echo "Downloaded w3auth-keycloak-plugin ${W3AUTH_VERSION:-1.1.0}"
+    volumes:
+      - providers:/providers
+
   keycloak:
     image: quay.io/keycloak/keycloak:25.0.2
+    depends_on:
+      plugin-download:
+        condition: service_completed_successfully
     command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: admin
@@ -8,8 +37,9 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Mount the whole build/libs directory so any JAR version Keycloak finds there is loaded.
-      # Build first with: ./gradlew :w3auth-keycloak-plugin:jar
-      - ../w3auth-keycloak-plugin/build/libs:/opt/keycloak/providers:ro
+      - providers:/opt/keycloak/providers
       # Demo realm, auto-imported on startup via --import-realm
       - ./realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+
+volumes:
+  providers:

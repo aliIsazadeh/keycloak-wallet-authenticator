@@ -1,18 +1,30 @@
 # Keycloak Wallet Authenticator
 
-**Production-grade, protocol-driven wallet login for Keycloak.** Let users sign in
-with a crypto wallet — Ethereum (SIWE) or Solana (SIWS), externally-owned or
-smart-contract wallets — as a native Keycloak Authenticator, with no wallet SDK
-and no third-party auth service.
+**Wallet login for Keycloak.** Sign-In With Ethereum (SIWE) and Solana (SIWS) —
+EOA and smart-contract wallets (EIP-1271, EIP-6492) — as a native Keycloak
+Authenticator. No wallet SDK, no third-party auth service, your existing
+passwords/MFA/social logins untouched.
 
-<!-- Badges: uncomment and fill in once CI + release are live
-[![CI](https://github.com/aliIsazadeh/keycloak-wallet-authenticator/actions/workflows/ci.yml/badge.svg)](https://github.com/aliIsazadeh/keycloak-wallet-authenticator/actions)
+[![CI](https://github.com/aliIsazadeh/keycloak-wallet-authenticator/actions/workflows/ci.yml/badge.svg)](https://github.com/aliIsazadeh/keycloak-wallet-authenticator/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/aliIsazadeh/keycloak-wallet-authenticator)](https://github.com/aliIsazadeh/keycloak-wallet-authenticator/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Keycloak](https://img.shields.io/badge/Keycloak-25%2B-brightgreen)](https://www.keycloak.org)
--->
 
-<img width="1200" height="592" alt="sample" src="https://github.com/user-attachments/assets/ec9d6738-2f48-4254-9d51-f010c173b74f" />
+![Wallet login demo — Keycloak login → Sign with MetaMask → logged in](demo/demo.gif)
 
+## Try it in 2 minutes
+
+Docker is the only requirement — no Java, no build:
+
+```bash
+git clone https://github.com/aliIsazadeh/keycloak-wallet-authenticator.git
+cd keycloak-wallet-authenticator
+docker compose -f demo/docker-compose.yml up
+```
+
+Then open **http://localhost:8080/realms/wallet-demo/account** and sign in with
+MetaMask (Ethereum) or Phantom (Solana). Details, admin credentials, and
+teardown: [demo/README.md](demo/README.md).
 
 ---
 
@@ -51,6 +63,7 @@ Keycloak in Testcontainers.
 | EOA (externally-owned) wallets | ✅ |
 | EIP-1271 deployed smart-contract wallets | ✅ |
 | EIP-6492 counterfactual (pre-deploy) smart-contract wallets | ✅ |
+| Native (non-browser) direct-grant flow for mobile/native apps | ✅ |
 | Single-use nonce (replay-protected) | ✅ |
 | Domain / URI binding (anti-phishing) | ✅ |
 | Tested against real Keycloak (Testcontainers) | ✅ |
@@ -79,25 +92,29 @@ For EVM smart-contract wallets, the plugin talks to an Ethereum node over Java 2
 native `HttpClient` (`HttpChainClient`) — deliberately avoiding web3j-core so
 Keycloak's server classpath stays clean.
 
-## Quickstart
+Native and mobile apps that can't drive a browser flow can use the direct-grant
+wire contract instead: see [docs/native-api.md](docs/native-api.md).
+
+## Install into your own Keycloak
 
 **Requirements:** Keycloak 25+, Java 21, an EVM RPC endpoint only if you need
 smart-contract wallet support.
 
-### 1. Build the plugin JAR
+### 1. Get the plugin JAR
+
+Grab the prebuilt fat JAR from the
+[latest release](https://github.com/aliIsazadeh/keycloak-wallet-authenticator/releases/latest)
+(SHA-256 checksums included), or build it yourself:
 
 ```bash
 ./gradlew :w3auth-keycloak-plugin:jar
 # produces w3auth-keycloak-plugin/build/libs/w3auth-keycloak-plugin-<version>.jar
 ```
 
-Or grab the prebuilt JAR from the [latest release](https://github.com/aliIsazadeh/keycloak-wallet-authenticator/releases).
-
 ### 2. Install it into Keycloak
 
 ```bash
-cp w3auth-keycloak-plugin/build/libs/w3auth-keycloak-plugin-*.jar \
-   /opt/keycloak/providers/
+cp w3auth-keycloak-plugin-*.jar /opt/keycloak/providers/
 /opt/keycloak/bin/kc.sh build
 /opt/keycloak/bin/kc.sh start
 ```
@@ -171,6 +188,7 @@ catalog):
 | --- | --- |
 | `w3auth-core` | Framework-free verification engine: identity, challenge, SIWE/SIWS parsing, signature verification, sessions. No Spring / JPA / Redis on its classpath. |
 | `w3auth-keycloak-plugin` | The Keycloak Authenticator SPI plugin — **the product, and this README's focus**. Fat JAR, BouncyCastle excluded (Keycloak provides it). |
+| `demo` | The 2-minute Docker quickstart above. |
 | `examples/self-hosted-rest-api` | **Reference example, not the product.** A standalone Spring Boot REST auth API built on the same core, showing how to self-host wallet login without Keycloak. See [its README](examples/self-hosted-rest-api/README.md). |
 
 The same verification engine powers both the plugin and the reference REST API —
